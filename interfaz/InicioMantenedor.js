@@ -123,7 +123,7 @@ export default function InicioMantenedor({ navigation }) {
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}> // 👈 Nuevo contenedor con SafeAreaView
+        <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
             <View style={estilos.contenedor}>
                 <View style={estilos.encabezado}>
                     <Text style={estilos.logoTexto}>SGS</Text>
@@ -257,6 +257,6 @@ export default function InicioMantenedor({ navigation }) {
                     </TouchableOpacity>
                 </View>
             </View>
-        </SafeAreaView> // 👈 Cierra el contenedor de SafeAreaView
+        </SafeAreaView>
     );
 }

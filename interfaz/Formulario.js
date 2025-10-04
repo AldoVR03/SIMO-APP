@@ -17,7 +17,6 @@ const opciones = ['Sí', 'No', 'No aplica'];
 const opcionesOtros = ['Sí', 'No'];
 
 export default function Formulario({ route, navigation }) {
-    // Inicializar el estado de respuestas como un objeto vacío
     const [respuestas, setRespuestas] = useState({});
     const [preguntas, setPreguntas] = useState([]);
     const [cargando, setCargando] = useState(true);
@@ -44,7 +43,6 @@ export default function Formulario({ route, navigation }) {
                         const docData = docSnap.data();
                         let pautaEncontrada = null;
 
-                        // Buscar la pauta de mantenimiento en diferentes campos posibles
                         if (docData.pauta_mantenimiento && Array.isArray(docData.pauta_mantenimiento)) {
                             pautaEncontrada = docData.pauta_mantenimiento;
                         } else if (docData.Plan_de_mantencion && Array.isArray(docData.Plan_de_mantencion)) {
@@ -79,7 +77,6 @@ export default function Formulario({ route, navigation }) {
         cargarPautaMantenimiento();
     }, [informe?.id]);
 
-    // Maneja la respuesta a una pregunta específica
     const manejarRespuesta = (preguntaTexto, indice, valor) => {
         setRespuestas(prevRespuestas => {
             const nuevaRespuesta = {
@@ -94,7 +91,6 @@ export default function Formulario({ route, navigation }) {
         });
     };
 
-    // Agrega un comentario a la pregunta "Otros"
     const agregarComentario = (preguntaTexto, indice, comentario) => {
         if (!comentario.trim()) return;
 
@@ -110,7 +106,6 @@ export default function Formulario({ route, navigation }) {
         });
     };
 
-    // Elimina un comentario de la pregunta "Otros"
     const eliminarComentario = (indicePregunta, indiceComentario) => {
         setRespuestas(prevRespuestas => {
             const comentariosActualizados = prevRespuestas[indicePregunta].otros.filter(
@@ -127,7 +122,6 @@ export default function Formulario({ route, navigation }) {
         });
     };
 
-    // Preparar los datos y navegar a la siguiente pantalla
     const navegarAEvidencia = () => {
         navigation.navigate('Evidencia', {
             informe,
@@ -226,7 +220,6 @@ export default function Formulario({ route, navigation }) {
     );
 }
 
-// Componente para manejar los comentarios, para mantener el código más limpio
 const OtrosComentarios = ({ comentarios, onAdd, onDelete }) => {
     const [entradaTemporal, setEntradaTemporal] = useState('');
 

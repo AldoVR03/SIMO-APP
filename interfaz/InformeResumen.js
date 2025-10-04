@@ -26,32 +26,27 @@ export default function InformeResumen({ route, navigation }) {
   // Guardar informe en Firebase
   const guardarInforme = async () => {
     try {
-      // referencia a la colección "informes"
-      const docRef = await addDoc(collection(db, "informes"), {
+      const docRef = await addDoc(collection(db, "informePreventivo"), {
         equipo: informe.equipo || "Equipo no definido",
         id_interno: informe.id || "N/A",
         codigo_sgs: informe.codigo_sgs || "N/A",
-        fecha: serverTimestamp(), // fecha de subida real
+        fecha: serverTimestamp(),
         respuestas: respuestas,
-        evidencias: imagenes, // URLs de Cloudinary
+        evidencias: imagenes, 
         firmas: firmas,
         respaldos: respaldos,
         usuario: auth.currentUser ? auth.currentUser.email : "Anon",
       });
 
-      console.log("✅ Informe guardado con ID:", docRef.id);
       Alert.alert("Éxito", "El informe se guardó correctamente en Firebase.");
 
-      // Navegar al inicio
       navigation.navigate("InicioMantenedor");
 
     } catch (error) {
-      console.error("❌ Error al guardar informe:", error);
       Alert.alert("Error", "No se pudo guardar el informe en Firebase.");
     }
   };
 
-  // Fecha local (solo para mostrar)
   const fechaActual = new Date().toLocaleDateString("es-ES", {
     day: "2-digit",
     month: "2-digit",
@@ -66,7 +61,6 @@ export default function InformeResumen({ route, navigation }) {
       >
         <Text style={estilos.titulo}>Resumen del Informe</Text>
 
-        {/* SECCIÓN: DATOS DEL EQUIPO */}
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Datos del equipo</Text>
           <Text style={estilos.textoItem}>Nombre: {informe.equipo || 'Equipo no definido'}</Text>
@@ -76,7 +70,6 @@ export default function InformeResumen({ route, navigation }) {
           <Text style={estilos.textoItem}>Estado: {informe.estado || 'N/A'}</Text>
         </View>
 
-        {/* SECCIÓN: RESPUESTAS */}
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Respuestas del formulario</Text>
           {Object.entries(respuestas).length === 0 ? (
@@ -103,7 +96,6 @@ export default function InformeResumen({ route, navigation }) {
           )}
         </View>
 
-        {/* SECCIÓN: EVIDENCIA */}
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Evidencia fotográfica</Text>
           {imagenes.length === 0 ? (
@@ -120,7 +112,6 @@ export default function InformeResumen({ route, navigation }) {
           )}
         </View>
 
-        {/* SECCIÓN: FIRMAS Y RESPALDOS */}
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Firmas y respaldos</Text>
           {['mantenedor', 'supervisor', 'calidad'].map((rol, i) => (
@@ -155,10 +146,9 @@ export default function InformeResumen({ route, navigation }) {
           ))}
         </View>
 
-        {/* BOTÓN FINAL */}
         <TouchableOpacity
           style={estilos.botonFinalizar}
-          onPress={guardarInforme}  // 🔹 Ahora guarda en Firebase
+          onPress={guardarInforme}
         >
           <Text style={estilos.textoBoton}>Guardar informe y finalizar</Text>
         </TouchableOpacity>
