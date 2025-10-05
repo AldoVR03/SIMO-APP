@@ -36,7 +36,8 @@ const uploadToCloudinary = async (uri) => {
 };
 
 export default function Evidencia({ navigation, route }) {
-  const { informe, respuestas } = route.params;
+  console.log("Datos recibidos en Evidencia:", route.params);
+  const { informe, respuestas, mantenimientoId } = route.params;
   const [imagenes, setImagenes] = useState([]);
 
   const seleccionarImagen = async () => {
@@ -106,6 +107,7 @@ export default function Evidencia({ navigation, route }) {
                 informe,
                 respuestas,
                 imagenes,
+                mantenimientoId,
               })
             }
           >

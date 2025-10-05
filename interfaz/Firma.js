@@ -15,11 +15,13 @@ const SignatureCanvas =
   Platform.OS !== 'web' ? require('react-native-signature-canvas').default : () => null;
 
 export default function Firma({ navigation, route }) {
+  console.log("Datos recibidos en Firma:", route.params);
   const {
     equipo = 'Equipo no definido',
     informe = {},
     respuestas = {},
     imagenes = [],
+    mantenimientoId, 
   } = route?.params || {};
 
   const [firmas, setFirmas] = useState({
@@ -69,9 +71,12 @@ export default function Firma({ navigation, route }) {
     }
   };
 
+  
   const manejarFirma = (base64, rol) => {
-    const key = getFirmaKey(rol);
-    setFirmas({ ...firmas, [key]: base64 });
+  const key = getFirmaKey(rol);
+  // el prefijo necesario para que la imagen se pueda mostrar
+  const firmaConPrefijo = `data:image/png;base64,${base64}`; 
+  setFirmas({ ...firmas, [key]: firmaConPrefijo });
   };
 
   const limpiarFirma = (rol) => {
@@ -151,6 +156,7 @@ export default function Firma({ navigation, route }) {
               imagenes,
               firmas,
               respaldos,
+              mantenimientoId,
             })
           }
         >

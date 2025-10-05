@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,15 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
+  ActivityIndicator, // Importante para el feedback de carga
 } from 'react-native';
 import { auth, db } from "../servicio/firebase-config"; // conexión firebase
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore"; 
 import uploadImage from "../servicio/cloudinary-config";
 
 export default function InformeResumen({ route, navigation }) {
+  console.log("Datos recibidos en InformeResumen:", route.params);
+  const [guardando, setGuardando] = useState(false); // Nuevo estado para feedback visual
   // Desestructuración segura
   const {
     informe = {},
@@ -21,12 +24,22 @@ export default function InformeResumen({ route, navigation }) {
     imagenes = [],
     firmas = {},
     respaldos = {},
+    mantenimientoId,
   } = route?.params || {};
 
   // Guardar informe en Firebase
   const guardarInforme = async () => {
+    // Validar que tenemos los IDs necesarios
+    if (!informe.id || !mantenimientoId) {
+      Alert.alert("Error", "Faltan datos de identificación (ID de equipo o mantenimiento). No se puede guardar.");
+      return;
+    }
+
+    setGuardando(true); // Inicia el indicador de carga
+
     try {
-      const docRef = await addDoc(collection(db, "informePreventivo"), {
+      // 1. Crear el nuevo documento en "informePreventivo" (esto ya lo hacías)
+      await addDoc(collection(db, "informePreventivo"), {
         equipo: informe.equipo || "Equipo no definido",
         id_interno: informe.id || "N/A",
         codigo_sgs: informe.codigo_sgs || "N/A",
@@ -38,12 +51,22 @@ export default function InformeResumen({ route, navigation }) {
         usuario: auth.currentUser ? auth.currentUser.email : "Anon",
       });
 
-      Alert.alert("Éxito", "El informe se guardó correctamente en Firebase.");
+       //Actualiza
+      const mantenimientoRef = doc(db, "planificacion", informe.id, "mantenimientos", mantenimientoId);
+
+      await updateDoc(mantenimientoRef, {
+        estado: "Completado"
+      });
+
+      Alert.alert("Éxito", "El informe se guardó y la tarea se ha completado.");
 
       navigation.navigate("InicioMantenedor");
 
     } catch (error) {
-      Alert.alert("Error", "No se pudo guardar el informe en Firebase.");
+      console.error("Error al guardar el informe:", error);
+      Alert.alert("Error", "No se pudo guardar el informe. Inténtalo de nuevo.");
+    } finally {
+      setGuardando(false); // Detiene el indicador de carga
     }
   };
 
