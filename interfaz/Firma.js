@@ -17,11 +17,13 @@ const SignatureCanvas =
   Platform.OS !== 'web' ? require('react-native-signature-canvas').default : () => null;
 
 export default function Firma({ navigation, route }) {
+  console.log("Datos recibidos en Firma:", route.params);
   const {
     equipo = 'Equipo no definido',
     informe = {},
     respuestas = {},
     imagenes = [],
+    mantenimientoId, 
   } = route?.params || {};
 
   const [firmas, setFirmas] = useState({

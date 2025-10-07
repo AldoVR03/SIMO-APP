@@ -21,7 +21,7 @@ export default function Formulario({ route, navigation }) {
     const [preguntas, setPreguntas] = useState([]);
     const [cargando, setCargando] = useState(true);
 
-    const { informe } = route.params;
+    const { informe, mantenimientoId } = route.params;
 
     useEffect(() => {
         async function cargarPautaMantenimiento() {
@@ -126,6 +126,7 @@ export default function Formulario({ route, navigation }) {
         navigation.navigate('Evidencia', {
             informe,
             respuestas,
+            mantenimientoId,
         });
     };
 
