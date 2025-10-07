@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,42 +8,109 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { auth, db } from "../servicio/firebase-config"; // conexión firebase
+import { auth, db } from "../servicio/firebase-config";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import uploadImage from "../servicio/cloudinary-config";
 
 export default function InformeResumen({ route, navigation }) {
-  // Desestructuración segura
+  const [guardando, setGuardando] = useState(false);
+
   const {
     informe = {},
     respuestas = {},
     imagenes = [],
     firmas = {},
     respaldos = {},
+    nombres = {}, 
   } = route?.params || {};
 
-  // Guardar informe en Firebase
-  const guardarInforme = async () => {
+  const uploadDataUri = async (dataUri, nombre = 'firma') => {
+    const formData = new FormData();
+    formData.append("file", dataUri);
+    formData.append("upload_preset", "SIMO-APP-Evidencia-Firma");
+    formData.append("cloud_name", "due9nyqmr");
+
     try {
+      const response = await fetch(
+        "https://api.cloudinary.com/v1_1/due9nyqmr/image/upload",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+      const json = await response.json();
+      return json.secure_url || null;
+    } catch (error) {
+      console.error(`Error subiendo ${nombre}:`, error);
+      return null;
+    }
+  };
+
+  const guardarInforme = async () => {
+    setGuardando(true);
+    try {
+      const urlsImagenes = [];
+      for (const uri of imagenes) {
+        try {
+          const urlCloudinary = await uploadImage(uri);
+          urlsImagenes.push(urlCloudinary);
+        } catch (error) {
+          console.error('Error subiendo imagen:', error);
+          urlsImagenes.push(uri); 
+        }
+      }
+
+      const urlsFirmas = {};
+      for (const [key, dataUri] of Object.entries(firmas)) {
+        if (dataUri && dataUri.startsWith('data:image')) {
+          try {
+            const urlCloudinary = await uploadDataUri(dataUri, key);
+            urlsFirmas[key] = urlCloudinary || dataUri;
+          } catch (error) {
+            console.error(`Error subiendo firma ${key}:`, error);
+            urlsFirmas[key] = dataUri;
+          }
+        } else {
+          urlsFirmas[key] = dataUri;
+        }
+      }
+
+      const urlsRespaldos = {};
+      for (const [key, uri] of Object.entries(respaldos)) {
+        if (uri) {
+          try {
+            const urlCloudinary = await uploadImage(uri);
+            urlsRespaldos[key] = urlCloudinary;
+          } catch (error) {
+            console.error(`Error subiendo respaldo ${key}:`, error);
+            urlsRespaldos[key] = uri; 
+          }
+        }
+      }
+
       const docRef = await addDoc(collection(db, "informePreventivo"), {
         equipo: informe.equipo || "Equipo no definido",
         id_interno: informe.id || "N/A",
         codigo_sgs: informe.codigo_sgs || "N/A",
         fecha: serverTimestamp(),
         respuestas: respuestas,
-        evidencias: imagenes, 
-        firmas: firmas,
-        respaldos: respaldos,
+        evidencias: urlsImagenes, 
+        firmas: urlsFirmas,       
+        respaldos: urlsRespaldos, 
+        nombres: nombres,          
         usuario: auth.currentUser ? auth.currentUser.email : "Anon",
       });
 
       Alert.alert("Éxito", "El informe se guardó correctamente en Firebase.");
-
       navigation.navigate("InicioMantenedor");
 
     } catch (error) {
-      Alert.alert("Error", "No se pudo guardar el informe en Firebase.");
+      console.error('Error guardando informe:', error);
+      Alert.alert("Error", "No se pudo guardar el informe en Firebase: " + error.message);
+    } finally {
+      setGuardando(false);
     }
   };
 
@@ -114,43 +181,78 @@ export default function InformeResumen({ route, navigation }) {
 
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Firmas y respaldos</Text>
-          {['mantenedor', 'supervisor', 'calidad'].map((rol, i) => (
-            <View key={i} style={estilos.firmaBloque}>
-              <Text style={estilos.nombreRol}>
-                {rol === "calidad" ? "A. Calidad DGM" : rol.charAt(0).toUpperCase() + rol.slice(1)}
-              </Text>
-              {/* Firma */}
-              <View style={estilos.firmaContenedor}>
-                {firmas[`firma_${rol}`] ? (
-                  <Image
-                    source={{ uri: firmas[`firma_${rol}`] }}
-                    style={estilos.firmaImagen}
-                  />
-                ) : (
-                  <Text style={estilos.textoFaltante}>Firma pendiente</Text>
+          {['mantenedor', 'supervisor', 'calidad'].map((rol, i) => {
+            const firmaKey = rol === 'calidad' ? 'firma_a_calidad_dgm' : `firma_${rol}`;
+            const respaldoKey = rol === 'calidad' ? 'firma_a_calidad_dgm_Respaldo' : `firma_${rol}_Respaldo`;
+            const nombreKey = `nombre_${rol}`;
+
+            console.log(`🔍 ${rol}:`, {
+              firmaKey,
+              firmaValue: firmas[firmaKey],
+              respaldoKey,
+              respaldoValue: respaldos[respaldoKey],
+              nombreValue: nombres[nombreKey]
+            });
+
+            return (
+              <View key={i} style={estilos.firmaBloque}>
+                <Text style={estilos.nombreRol}>
+                  {rol === "calidad" ? "A. Calidad DGM" : rol.charAt(0).toUpperCase() + rol.slice(1)}
+                </Text>
+
+                {nombres[nombreKey] && (
+                  <Text style={estilos.nombrePersona}>
+                    Nombre: {nombres[nombreKey]}
+                  </Text>
                 )}
+
+                <View style={estilos.firmaContenedor}>
+                  <Text style={estilos.subtitulo}>Firma:</Text>
+                  {firmas[firmaKey] ? (
+                    <>
+                      <Image
+                        source={{ uri: firmas[firmaKey] }}
+                        style={estilos.firmaImagen}
+                        resizeMode="contain"
+                        onError={(e) => console.error(`❌ Error cargando firma ${rol}:`, e.nativeEvent.error)}
+                        onLoad={() => console.log(`✅ Firma ${rol} cargada correctamente`)}
+                      />
+                      <Text style={estilos.textoDebug}>
+                        {firmas[firmaKey].substring(0, 50)}...
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={estilos.textoFaltante}>Firma pendiente</Text>
+                  )}
+                </View>
+                <View style={estilos.respaldoContenedor}>
+                  <Text style={estilos.subtitulo}>Respaldo (Carnet):</Text>
+                  {respaldos[respaldoKey] ? (
+                    <Image
+                      source={{ uri: respaldos[respaldoKey] }}
+                      style={estilos.imagenRespaldo}
+                      resizeMode="cover"
+                      onError={(e) => console.error(`❌ Error cargando respaldo ${rol}:`, e.nativeEvent.error)}
+                    />
+                  ) : (
+                    <Text style={estilos.textoFaltante}>Respaldo no ingresado</Text>
+                  )}
+                </View>
               </View>
-              {/* Respaldo */}
-              <View style={estilos.respaldoContenedor}>
-                <Text style={estilos.subtitulo}>Respaldo:</Text>
-                {respaldos[`firma_${rol}_Respaldo`] ? (
-                  <Image
-                    source={{ uri: respaldos[`firma_${rol}_Respaldo`] }}
-                    style={estilos.imagenRespaldo}
-                  />
-                ) : (
-                  <Text style={estilos.textoFaltante}>Respaldo no ingresado</Text>
-                )}
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         <TouchableOpacity
-          style={estilos.botonFinalizar}
+          style={[estilos.botonFinalizar, guardando && estilos.botonDeshabilitado]}
           onPress={guardarInforme}
+          disabled={guardando}
         >
-          <Text style={estilos.textoBoton}>Guardar informe y finalizar</Text>
+          {guardando ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={estilos.textoBoton}>Guardar informe y finalizar</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -167,149 +269,141 @@ const estilos = StyleSheet.create({
   },
   contenedor: {
     padding: 20,
-    paddingBottom: 60,
+    paddingBottom: 40,
   },
   titulo: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 24,
-    alignSelf: 'center',
-    color: '#333',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   seccion: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    backgroundColor: '#f8f8f8',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    marginBottom: 24,
+    padding: 15,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
   },
   tituloSeccion: {
-    fontWeight: 'bold',
     fontSize: 18,
+    fontWeight: '600',
     marginBottom: 12,
-    color: '#333',
+    color: '#ff9900',
   },
   textoItem: {
     fontSize: 14,
+    marginBottom: 6,
+    color: '#333',
+  },
+  sinDatos: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  respuestaItem: {
+    marginBottom: 15,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  pregunta: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#333',
+  },
+  respuesta: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  otrosTitulo: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 8,
     marginBottom: 4,
     color: '#555',
   },
-  respuestaItem: {
-    marginBottom: 16,
-  },
-  pregunta: {
-    fontWeight: 'bold',
-    color: '#444',
-    fontSize: 14,
-  },
-  respuesta: {
-    color: '#555',
-    marginLeft: 10,
-    fontSize: 14,
-  },
-  otrosTitulo: {
-    fontWeight: 'bold',
-    marginTop: 8,
-    marginLeft: 10,
-    color: '#444',
-  },
   otros: {
-    fontStyle: 'italic',
+    fontSize: 13,
     color: '#666',
-    marginLeft: 20,
+    marginLeft: 10,
   },
   imagenEvidencia: {
     width: '100%',
     height: 200,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    marginVertical: 10,
+    marginBottom: 10,
   },
   firmaBloque: {
     marginBottom: 20,
-    padding: 10,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  nombreRol: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+    color: '#333',
+  },
+  nombrePersona: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  firmaContenedor: {
+    marginBottom: 12,
+  },
+  subtitulo: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#555',
+  },
+  firmaImagen: {
+    width: '100%',
+    height: 120,
     backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+  },
+  respaldoContenedor: {
+    marginTop: 12,
+  },
+  imagenRespaldo: {
+    width: 120,
+    height: 120,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ddd',
   },
-  nombreRol: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginBottom: 8,
-    color: '#444',
-  },
-  firmaContenedor: {
-    height: 120,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: '#888',
-    borderRadius: 4,
-    marginBottom: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fafafa',
-  },
-  sinFirma: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100%',
-    width: '100%',
-  },
   textoFaltante: {
-    fontStyle: 'italic',
-    color: '#888',
-    textAlign: 'center',
-  },
-  firmaImagen: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'contain',
-  },
-  respaldoContenedor: {
-    marginTop: 8,
-  },
-  subtitulo: {
-    fontWeight: '600',
     fontSize: 14,
-    marginBottom: 4,
-  },
-  imagenRespaldo: {
-    width: '100%',
-    height: 120,
-    resizeMode: 'contain',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#aaa',
-  },
-  sinDatos: {
+    color: '#999',
     fontStyle: 'italic',
-    color: '#888',
-    textAlign: 'center',
+    paddingVertical: 10,
+  },
+  textoDebug: {
+    fontSize: 10,
+    color: '#999',
+    marginTop: 4,
+    fontFamily: 'monospace',
   },
   botonFinalizar: {
     backgroundColor: '#ff9900',
-    padding: 18,
-    borderRadius: 10,
+    padding: 16,
+    borderRadius: 8,
     alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 30,
-    elevation: 3,
-    shadowColor: '#ff9900',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    marginTop: 20,
+  },
+  botonDeshabilitado: {
+    backgroundColor: '#ccc',
   },
   textoBoton: {
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 18,
+    fontWeight: '600',
+    fontSize: 16,
   },
 });

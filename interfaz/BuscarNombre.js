@@ -73,7 +73,6 @@ export default function BuscarNombre({ navigation }) {
           <TouchableOpacity 
             style={estilosComunes.tarjetaInforme}
             onPress={() => {
-              // Navegar a pantalla de informes del equipo
               navigation.navigate('InformesEquipo', { 
                 equipoId: item.id,
                 equipoNombre: item.nombre 

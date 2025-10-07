@@ -19,7 +19,7 @@ const uploadToCloudinary = async (uri) => {
     type: "image/jpeg",
     name: "evidencia.jpg",
   });
-  data.append("upload_preset", "SIMO-APP-Evidencia-Firma"); // tu preset unsigned
+  data.append("upload_preset", "SIMO-APP-Evidencia-Firma"); 
 
   try {
     const res = await fetch("https://api.cloudinary.com/v1_1/due9nyqmr/image/upload", {
@@ -28,7 +28,7 @@ const uploadToCloudinary = async (uri) => {
     });
 
     const json = await res.json();
-    return json.secure_url; // 🔗 link final en Cloudinary
+    return json.secure_url;
   } catch (err) {
     console.error("Error subiendo a Cloudinary:", err);
     return null;

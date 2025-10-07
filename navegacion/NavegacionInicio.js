@@ -10,6 +10,7 @@ import InicioMantenedor from '../interfaz/InicioMantenedor';
 import PerfilMantenedor from '../interfaz/PerfilMantenedor';
 
 import BuscarNombre from '../interfaz/BuscarNombre';
+import EscaneoQR from '../interfaz/EscaneoQR';
 import InformesEquipo from '../interfaz/InformesEquipo';
 //import QRScanner from '../interfaz/EscaneoQR';
 //<Stack.Screen name="QRScanner" component={QRScanner} />
@@ -37,6 +38,7 @@ export default function NavegacionInicio() {
 
         <Stack.Screen name="BuscarNombre" component={BuscarNombre} />
         <Stack.Screen name="InformesEquipo" component={InformesEquipo} />
+        <Stack.Screen name="EscaneoQR" component={EscaneoQR} />
 
         <Stack.Screen name="Formulario" component={Formulario} />
         <Stack.Screen name="Evidencia" component={Evidencia} />

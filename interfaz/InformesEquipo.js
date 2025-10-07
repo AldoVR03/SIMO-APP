@@ -12,41 +12,86 @@ import { db } from '../servicio/firebase-config';
 import estilosComunes, { COLORES } from '../assets/estilos';
 
 export default function InformesDelEquipo({ route, navigation }) {
-  const { equipoId, equipoNombre } = route.params;
+
+  const { equipoId, equipoNombre, equipo } = route.params;
+  
+  const idEquipo = equipo ? equipo.id : equipoId;
+  const nombreEquipo = equipo ? equipo.equipo : equipoNombre;
+  const codigoSGS = equipo ? equipo.codigo_sgs : equipoId;
   
   const [informes, setInformes] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
     obtenerInformes();
-  }, [equipoId]);
+  }, [idEquipo]);
 
   const obtenerInformes = async () => {
     try {
       setCargando(true);
-      
-      console.log('🔍 Buscando informes para:', equipoId);
-      
+
       const q = query(
         collection(db, "informePreventivo"),
-        where("codigo_sgs", "==", equipoId),
-        orderBy("fecha", "asc")
+        where("id_interno", "==", idEquipo)
       );
 
       const snapshot = await getDocs(q);
-      console.log('📊 Documentos encontrados:', snapshot.size);
+      console.log('📊 Informes preventivos encontrados:', snapshot.size);
       
-      const listaInformes = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      let listaInformes = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          fecha: data.fecha
+        };
+      });
+
+      listaInformes.sort((a, b) => {
+        const fechaA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha);
+        const fechaB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha);
+        return fechaB - fechaA;
+      });
+
+      try {
+        const qCorrectivo = query(
+          collection(db, "informeCorrectivo"),
+          where("id_interno", "==", idEquipo)
+        );
+        const snapshotCorrectivo = await getDocs(qCorrectivo);
+        console.log('📊 Informes correctivos encontrados:', snapshotCorrectivo.size);
+        
+        const correctivos = snapshotCorrectivo.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            tipo: 'Correctivo',
+            ...data
+          };
+        });
+
+        listaInformes = listaInformes.map(inf => ({ ...inf, tipo: 'Preventivo' }));
+
+        listaInformes = [...listaInformes, ...correctivos];
+
+        listaInformes.sort((a, b) => {
+          const fechaA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha);
+          const fechaB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha);
+          return fechaB - fechaA;
+        });
+      } catch (errorCorrectivo) {
+        console.log('⚠️ No hay colección de informes correctivos o error:', errorCorrectivo.message);
+      }
 
       setInformes(listaInformes);
+      console.log('✅ Total de informes cargados:', listaInformes.length);
+      
     } catch (error) {
       console.error("❌ Error al obtener informes:", error);
       
       if (error.code === 'failed-precondition') {
-        console.log('⚠️ Crea el índice: codigo_sgs + fecha');
+        console.log('⚠️ Necesitas crear un índice en Firebase');
+        console.log('⚠️ Campo: id_interno');
       }
     } finally {
       setCargando(false);
@@ -71,6 +116,11 @@ export default function InformesDelEquipo({ route, navigation }) {
     return 'Fecha no disponible';
   };
 
+  const obtenerColorTipo = (tipo) => {
+    if (tipo === 'Correctivo') return '#e67e22';
+    return '#3498db';
+  };
+
   if (cargando) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
@@ -87,7 +137,6 @@ export default function InformesDelEquipo({ route, navigation }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
       <View style={{ flex: 1 }}>
-        {/* Header con flecha de regreso */}
         <View style={estilosComunes.encabezado}>
           <TouchableOpacity 
             onPress={() => navigation.goBack()}
@@ -97,14 +146,12 @@ export default function InformesDelEquipo({ route, navigation }) {
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
         </View>
-
-        {/* Título y subtítulo centrados */}
         <View style={{ paddingHorizontal: 24, marginBottom: 20, alignItems: 'center' }}>
           <Text style={[estilosComunes.titulo, { textAlign: 'center' }]}>
-            {equipoNombre}
+            {nombreEquipo}
           </Text>
           <Text style={{ color: '#999', fontSize: 12, marginTop: 5 }}>
-            {equipoId}
+            Código SGS: {codigoSGS}
           </Text>
           <Text style={{ color: '#666', fontSize: 14, marginTop: 10 }}>
             {informes.length} {informes.length === 1 ? 'informe' : 'informes'}
@@ -115,15 +162,31 @@ export default function InformesDelEquipo({ route, navigation }) {
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
             <Text style={{ fontSize: 64, marginBottom: 20 }}>📋</Text>
             <Text style={{ fontSize: 16, color: '#666', marginBottom: 40, textAlign: 'center' }}>
-              No hay informes preventivos{'\n'}registrados para este equipo
+              No hay informes registrados{'\n'}para este equipo
             </Text>
-            
+
             <TouchableOpacity
-              style={[estilosComunes.boton, { backgroundColor: '#3b44c3' }]}
+              style={[estilosComunes.boton, { backgroundColor: '#3498db', marginBottom: 12 }]}
+              onPress={() =>
+                navigation.navigate('Formulario', {
+                  informe: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS },
+                  fechaSeleccionada: new Date().toISOString(),
+                  tipoInforme: 'preventivo'
+                })
+              }
+            >
+              <Text style={estilosComunes.textoBoton}>
+                + Crear informe preventivo
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
               onPress={() =>
                 navigation.navigate('InformeCorrectivo', { 
-                  equipoId: equipoId,
-                  equipoNombre: equipoNombre 
+                  equipoId: idEquipo,
+                  equipoNombre: nombreEquipo,
+                  equipo: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS }
                 })
               }
             >
@@ -143,8 +206,8 @@ export default function InformesDelEquipo({ route, navigation }) {
                   estilosComunes.tarjetaInforme,
                   { 
                     backgroundColor: '#fff',
-                    borderWidth: 1,
-                    borderColor: '#e0e0e0'
+                    borderWidth: 2,
+                    borderColor: obtenerColorTipo(item.tipo || 'Preventivo')
                   }
                 ]}
                 onPress={() =>
@@ -156,12 +219,31 @@ export default function InformesDelEquipo({ route, navigation }) {
               >
                 <View style={estilosComunes.tarjetaContenido}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[estilosComunes.tituloTarjeta, { fontSize: 15 }]}>
-                      Informe Preventivo
-                    </Text>
-                    <Text style={{ color: '#666', fontSize: 13, marginTop: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                      <View style={{
+                        backgroundColor: obtenerColorTipo(item.tipo || 'Preventivo'),
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 12,
+                        marginRight: 10
+                      }}>
+                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>
+                          {item.tipo || 'Preventivo'}
+                        </Text>
+                      </View>
+                      <Text style={[estilosComunes.tituloTarjeta, { fontSize: 15, flex: 1 }]}>
+                        Informe {item.tipo || 'Preventivo'}
+                      </Text>
+                    </View>
+                    
+                    <Text style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
                       📅 {formatearFecha(item.fecha)}
                     </Text>
+                    {item.usuario && (
+                      <Text style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+                        👤 {item.usuario}
+                      </Text>
+                    )}
                     {item.tecnico && (
                       <Text style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
                         👤 {item.tecnico}
@@ -181,13 +263,29 @@ export default function InformesDelEquipo({ route, navigation }) {
               </TouchableOpacity>
             )}
             ListFooterComponent={
-              <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
+              <View style={{ paddingHorizontal: 24, marginTop: 20, gap: 12 }}>
                 <TouchableOpacity
-                  style={[estilosComunes.boton, { backgroundColor: '#3b44c3' }]}
+                  style={[estilosComunes.boton, { backgroundColor: '#3498db' }]}
+                  onPress={() =>
+                    navigation.navigate('Formulario', {
+                      informe: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS },
+                      fechaSeleccionada: new Date().toISOString(),
+                      tipoInforme: 'preventivo'
+                    })
+                  }
+                >
+                  <Text style={estilosComunes.textoBoton}>
+                    + Crear informe preventivo
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
                   onPress={() =>
                     navigation.navigate('InformeCorrectivo', { 
-                      equipoId: equipoId,
-                      equipoNombre: equipoNombre 
+                      equipoId: idEquipo,
+                      equipoNombre: nombreEquipo,
+                      equipo: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS }
                     })
                   }
                 >

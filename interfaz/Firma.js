@@ -6,11 +6,13 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  TextInput,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
-// Import condicional para evitar errores en EAS Build
 const SignatureCanvas =
   Platform.OS !== 'web' ? require('react-native-signature-canvas').default : () => null;
 
@@ -32,6 +34,12 @@ export default function Firma({ navigation, route }) {
     firma_mantenedor_Respaldo: null,
     firma_supervisor_Respaldo: null,
     firma_a_calidad_dgm_Respaldo: null,
+  });
+
+  const [nombres, setNombres] = useState({
+    nombre_mantenedor: '',
+    nombre_supervisor: '',
+    nombre_calidad: '',
   });
 
   const canvasRefs = {
@@ -56,6 +64,10 @@ export default function Firma({ navigation, route }) {
     return `firma_${rol}_Respaldo`;
   };
 
+  const getNombreKey = (rol) => {
+    return `nombre_${rol}`;
+  };
+
   const seleccionarImagen = async (rol) => {
     const key = getRespaldoKey(rol);
     const resultado = await ImagePicker.launchImageLibraryAsync({
@@ -69,16 +81,36 @@ export default function Firma({ navigation, route }) {
     }
   };
 
-  const manejarFirma = (base64, rol) => {
+  const manejarFirma = (signature, rol) => {
     const key = getFirmaKey(rol);
-    setFirmas({ ...firmas, [key]: base64 });
+
+    let dataUri;
+    if (signature.startsWith('data:image')) {
+      dataUri = signature;
+    } else {
+      dataUri = `data:image/png;base64,${signature}`;
+    }
+    
+    setFirmas({ ...firmas, [key]: dataUri });
+    console.log(`✅ Firma guardada para ${rol}:`, dataUri.substring(0, 50) + '...');
+  };
+
+  const guardarFirma = (rol) => {
+    const ref = canvasRefs[rol]?.current;
+    if (ref && ref.readSignature) {
+      ref.readSignature();
+    } else {
+      Alert.alert('Error', 'No se pudo guardar la firma');
+    }
   };
 
   const limpiarFirma = (rol) => {
     const key = getFirmaKey(rol);
-    if (canvasRefs[rol]?.current?.clearSignature) {
-      canvasRefs[rol].current.clearSignature();
+    const ref = canvasRefs[rol]?.current;
+    if (ref && ref.clearSignature) {
+      ref.clearSignature();
       setFirmas({ ...firmas, [key]: null });
+      console.log(`🗑️ Firma limpiada para ${rol}`);
     }
   };
 
@@ -87,7 +119,6 @@ export default function Firma({ navigation, route }) {
 
   return (
     <View style={estilos.contenedorPrincipal}>
-      {/* Encabezado fijo */}
       <View style={estilos.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={estilos.botonVolver}>
           <Ionicons name="arrow-back" size={24} color="#ff9900" />
@@ -95,33 +126,85 @@ export default function Firma({ navigation, route }) {
         <Text style={estilos.titulo}>{equipo}</Text>
       </View>
 
-      {/* Contenido sin desplazamiento */}
-      <View style={estilos.contenedorContenido}>
+      <ScrollView 
+        style={estilos.scrollContenido} 
+        contentContainerStyle={estilos.contenedorContenido}
+        keyboardShouldPersistTaps="handled"
+      >
         {roles.map((rol, i) => (
           <View key={i} style={estilos.bloqueFirma}>
             <Text style={estilos.rolTexto}>{capitalizar(rol)}</Text>
 
+            <TextInput
+              style={estilos.inputNombre}
+              placeholder={`Nombre completo del ${capitalizar(rol)}`}
+              value={nombres[getNombreKey(rol)]}
+              onChangeText={(texto) => 
+                setNombres({ ...nombres, [getNombreKey(rol)]: texto })
+              }
+            />
+
             <View style={estilos.fila}>
-              <View style={estilos.cajaFirma}>
-                {Platform.OS !== 'web' && (
-                  <>
+              <View style={estilos.contenedorFirma}>
+                <View style={estilos.cajaFirma}>
+                  {Platform.OS !== 'web' ? (
                     <SignatureCanvas
                       ref={canvasRefs[rol]}
-                      onOK={(base64) => manejarFirma(base64, rol)}
-                      autoClear={false}
-                      imageType="image/png"
+                      onOK={(signature) => manejarFirma(signature, rol)}
+                      onEmpty={() => console.log(`Canvas vacío: ${rol}`)}
+                      descriptionText="Firme aquí"
+                      clearText="Limpiar"
+                      confirmText="Guardar"
                       webStyle={`
-                        .m-signature-pad--footer {display: none; margin: 0px;}
-                        body,html {margin: 0; padding: 0;}
+                        .m-signature-pad {
+                          box-shadow: none;
+                          border: none;
+                          margin: 0;
+                        }
+                        .m-signature-pad--body {
+                          border: none;
+                          margin: 0;
+                        }
+                        .m-signature-pad--footer {
+                          display: none;
+                        }
+                        body, html {
+                          margin: 0;
+                          padding: 0;
+                          width: 100%;
+                          height: 100%;
+                        }
                       `}
                     />
+                  ) : (
+                    <Text style={estilos.textoWeb}>Canvas no disponible en web</Text>
+                  )}
+                </View>
+                {Platform.OS !== 'web' && (
+                  <View style={estilos.botonesCanvas}>
+                    <TouchableOpacity
+                      onPress={() => guardarFirma(rol)}
+                      style={[estilos.botonCanvas, estilos.botonGuardar]}
+                    >
+                      <Ionicons name="checkmark" size={16} color="#fff" />
+                      <Text style={estilos.textoBotonCanvas}>Guardar</Text>
+                    </TouchableOpacity>
+                    
                     <TouchableOpacity
                       onPress={() => limpiarFirma(rol)}
-                      style={estilos.botonLimpiar}
+                      style={[estilos.botonCanvas, estilos.botonLimpiar]}
                     >
-                      <Text style={estilos.textoLimpiar}>Limpiar</Text>
+                      <Ionicons name="trash-outline" size={16} color="#fff" />
+                      <Text style={estilos.textoBotonCanvas}>Limpiar</Text>
                     </TouchableOpacity>
-                  </>
+                  </View>
+                )}
+
+                {firmas[getFirmaKey(rol)] && (
+                  <View style={estilos.indicadorGuardado}>
+                    <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                    <Text style={estilos.textoGuardado}>Firma guardada</Text>
+                  </View>
                 )}
               </View>
 
@@ -130,7 +213,10 @@ export default function Firma({ navigation, route }) {
                 onPress={() => seleccionarImagen(rol)}
               >
                 {respaldos[getRespaldoKey(rol)] ? (
-                  <Image source={{ uri: respaldos[getRespaldoKey(rol)] }} style={estilos.imgRespaldo} />
+                  <Image 
+                    source={{ uri: respaldos[getRespaldoKey(rol)] }} 
+                    style={estilos.imgRespaldo} 
+                  />
                 ) : (
                   <>
                     <Ionicons name="image-outline" size={28} color="#777" />
@@ -144,19 +230,42 @@ export default function Firma({ navigation, route }) {
 
         <TouchableOpacity
           style={estilos.botonFinalizar}
-          onPress={() =>
-            navigation.navigate('InformeResumen', {
-              informe,
-              respuestas,
-              imagenes,
-              firmas,
-              respaldos,
-            })
-          }
+          onPress={() => {
+            const hayFirmas = Object.values(firmas).some(f => f !== null);
+            if (!hayFirmas) {
+              Alert.alert(
+                'Advertencia', 
+                '¿Desea continuar sin firmas?',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { 
+                    text: 'Continuar', 
+                    onPress: () => navigation.navigate('InformeResumen', {
+                      informe,
+                      respuestas,
+                      imagenes,
+                      firmas,
+                      respaldos,
+                      nombres,
+                    })
+                  }
+                ]
+              );
+            } else {
+              navigation.navigate('InformeResumen', {
+                informe,
+                respuestas,
+                imagenes,
+                firmas,
+                respaldos,
+                nombres,
+              });
+            }
+          }}
         >
           <Text style={estilos.textoBotonFinalizar}>Finalizar</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -174,6 +283,8 @@ const estilos = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   botonVolver: {
     position: 'absolute',
@@ -186,50 +297,107 @@ const estilos = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  contenedorContenido: {
+  scrollContenido: {
     flex: 1,
+  },
+  contenedorContenido: {
     paddingHorizontal: 20,
+    paddingBottom: 30,
   },
   bloqueFirma: {
-    marginBottom: 24,
+    marginBottom: 30,
+    marginTop: 16,
   },
   rolTexto: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 10,
+    color: '#333',
+  },
+  inputNombre: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    marginBottom: 12,
+    backgroundColor: '#f9f9f9',
   },
   fila: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+  },
+  contenedorFirma: {
+    flex: 1,
+    marginRight: 12,
   },
   cajaFirma: {
+    height: 180,
+    borderWidth: 2,
+    borderColor: '#ff9900',
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+  },
+  textoWeb: {
+    textAlign: 'center',
+    marginTop: 60,
+    color: '#999',
+  },
+  botonesCanvas: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  botonCanvas: {
     flex: 1,
-    height: 150,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginHorizontal: 4,
+  },
+  botonGuardar: {
+    backgroundColor: '#4CAF50',
   },
   botonLimpiar: {
-    position: 'absolute',
-    bottom: 5,
-    right: 5,
-    backgroundColor: '#ff9900',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    backgroundColor: '#f44336',
   },
-  textoLimpiar: {
+  textoBotonCanvas: {
     color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  indicadorGuardado: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  textoGuardado: {
+    color: '#4CAF50',
     fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   cajaCarnet: {
-    width: 100,
-    height: 100,
-    borderWidth: 1,
+    width: 110,
+    height: 110,
+    borderWidth: 2,
     borderColor: '#ccc',
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#f9f9f9',
   },
   imgRespaldo: {
     width: '100%',
@@ -244,24 +412,15 @@ const estilos = StyleSheet.create({
   },
   botonFinalizar: {
     backgroundColor: '#ff9900',
-    padding: 15,
+    padding: 16,
     borderRadius: 8,
     alignItems: 'center',
+    marginTop: 20,
     marginBottom: 12,
-  },
-  botonCancelar: {
-    backgroundColor: '#eee',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 24,
   },
   textoBotonFinalizar: {
     color: '#fff',
-    fontWeight: '600',
-  },
-  textoBotonCancelar: {
-    color: '#666',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });
