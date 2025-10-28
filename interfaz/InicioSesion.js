@@ -10,11 +10,12 @@ import { db } from '../servicio/firebase-config';
 import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth'; 
 import { doc, getDoc } from 'firebase/firestore'; 
 
+
 export default function InicioSesion({ navigation }) {
   const [usuario, setUsuario] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [cargando, setCargando] = useState(true);
-
+  const estanCamposVacios = usuario === "" || contrasena === "";
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -31,7 +32,7 @@ export default function InicioSesion({ navigation }) {
                 navigation.replace('InicioAdmin');
                 break;
               case 'mantenedor':
-                navigation.replace('InicioMantenedor');
+                navigation.replace('InicioMantenedor' , { usuario });
                 break;
               default:
                 console.log("El rol del usuario no es 'admin' o 'mantenedor'.");
@@ -88,7 +89,7 @@ export default function InicioSesion({ navigation }) {
       <Text style={estilos.etiqueta}>Correo</Text>
       <TextInput
         style={estilos.entrada}
-        placeholder="correo@ejemplo.com"
+        placeholder="nombre.apellido@ejemplo.com"
         value={usuario}
         onChangeText={setUsuario}
         autoCapitalize="none"
@@ -97,13 +98,13 @@ export default function InicioSesion({ navigation }) {
       <Text style={estilos.etiqueta}>Contraseña</Text>
       <TextInput
         style={estilos.entrada}
-        placeholder="tu contraseña"
+        placeholder="Tu contraseña"
         secureTextEntry
         value={contrasena}
         onChangeText={setContrasena}
       />
 
-      <TouchableOpacity style={estilos.boton} onPress={manejarInicioSesion}>
+      <TouchableOpacity style={estilos.boton} onPress={manejarInicioSesion} disabled={estanCamposVacios} >
         <Text style={estilos.textoBoton}>Iniciar sesión</Text>
       </TouchableOpacity>
 

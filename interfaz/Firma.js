@@ -9,21 +9,25 @@ import {
   TextInput,
   ScrollView,
   Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORES } from '../assets/estilos';
 
 const SignatureCanvas =
-  Platform.OS !== 'web' ? require('react-native-signature-canvas').default : () => null;
+  Platform.OS !== 'web'
+    ? require('react-native-signature-canvas').default
+    : () => null;
 
 export default function Firma({ navigation, route }) {
-  console.log("Datos recibidos en Firma:", route.params);
+  console.log("✅ Datos recibidos en Firma:", route.params);
   const {
     equipo = 'Equipo no definido',
     informe = {},
     respuestas = {},
     imagenes = [],
-    mantenimientoId, 
+    mantenimientoId, // ← RECIBIR mantenimientoId
   } = route?.params || {};
 
   const [firmas, setFirmas] = useState({
@@ -49,7 +53,7 @@ export default function Firma({ navigation, route }) {
     supervisor: useRef(),
     calidad: useRef(),
   };
-
+const [scrollEnabled, setScrollEnabled] = useState(true);
   const roles = ['mantenedor', 'supervisor', 'calidad'];
 
   const getFirmaKey = (rol) => {
@@ -119,6 +123,20 @@ export default function Firma({ navigation, route }) {
   const capitalizar = (text) =>
     text === 'calidad' ? 'A. Calidad DGM' : text.charAt(0).toUpperCase() + text.slice(1);
 
+  const navegarAResumen = () => {
+    console.log('📤 Navegando a InformeResumen con mantenimientoId:', mantenimientoId);
+    
+    navigation.navigate('InformeResumen', {
+      informe,
+      respuestas,
+      imagenes,
+      firmas,
+      respaldos,
+      nombres,
+      mantenimientoId, // ← CRÍTICO: Pasar mantenimientoId
+    });
+  };
+
   return (
     <View style={estilos.contenedorPrincipal}>
       <View style={estilos.header}>
@@ -132,6 +150,8 @@ export default function Firma({ navigation, route }) {
         style={estilos.scrollContenido} 
         contentContainerStyle={estilos.contenedorContenido}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={scrollEnabled}
       >
         {roles.map((rol, i) => (
           <View key={i} style={estilos.bloqueFirma}>
@@ -154,6 +174,8 @@ export default function Firma({ navigation, route }) {
                       ref={canvasRefs[rol]}
                       onOK={(signature) => manejarFirma(signature, rol)}
                       onEmpty={() => console.log(`Canvas vacío: ${rol}`)}
+                      onBegin={() => setScrollEnabled(false)}
+                      onEnd={() => setScrollEnabled(true)}
                       descriptionText="Firme aquí"
                       clearText="Limpiar"
                       confirmText="Guardar"
@@ -242,26 +264,12 @@ export default function Firma({ navigation, route }) {
                   { text: 'Cancelar', style: 'cancel' },
                   { 
                     text: 'Continuar', 
-                    onPress: () => navigation.navigate('InformeResumen', {
-                      informe,
-                      respuestas,
-                      imagenes,
-                      firmas,
-                      respaldos,
-                      nombres,
-                    })
+                    onPress: navegarAResumen
                   }
                 ]
               );
             } else {
-              navigation.navigate('InformeResumen', {
-                informe,
-                respuestas,
-                imagenes,
-                firmas,
-                respaldos,
-                nombres,
-              });
+              navegarAResumen();
             }
           }}
         >

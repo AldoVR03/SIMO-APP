@@ -146,6 +146,7 @@ export default function InformesDelEquipo({ route, navigation }) {
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
         </View>
+        
         <View style={{ paddingHorizontal: 24, marginBottom: 20, alignItems: 'center' }}>
           <Text style={[estilosComunes.titulo, { textAlign: 'center' }]}>
             {nombreEquipo}
@@ -159,41 +160,30 @@ export default function InformesDelEquipo({ route, navigation }) {
         </View>
 
         {informes.length === 0 ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
-            <Text style={{ fontSize: 64, marginBottom: 20 }}>📋</Text>
-            <Text style={{ fontSize: 16, color: '#666', marginBottom: 40, textAlign: 'center' }}>
-              No hay informes registrados{'\n'}para este equipo
-            </Text>
-
-            <TouchableOpacity
-              style={[estilosComunes.boton, { backgroundColor: '#3498db', marginBottom: 12 }]}
-              onPress={() =>
-                navigation.navigate('Formulario', {
-                  informe: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS },
-                  fechaSeleccionada: new Date().toISOString(),
-                  tipoInforme: 'preventivo'
-                })
-              }
-            >
-              <Text style={estilosComunes.textoBoton}>
-                + Crear informe preventivo
+          <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 24 }}>
+            
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, color: '#666', textAlign: 'center' }}>
+                No hay informes registrados{'\n'}para este equipo
               </Text>
-            </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity
-              style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
-              onPress={() =>
-                navigation.navigate('InformeCorrectivo', { 
-                  equipoId: idEquipo,
-                  equipoNombre: nombreEquipo,
-                  equipo: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS }
-                })
-              }
-            >
-              <Text style={estilosComunes.textoBoton}>
-                + Crear informe correctivo
-              </Text>
-            </TouchableOpacity>
+            <View style={{ paddingBottom: 20 }}>
+              <TouchableOpacity
+                style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
+                onPress={() =>
+                  navigation.navigate('InformeCorrectivo', { 
+                    equipoId: idEquipo,
+                    equipoNombre: nombreEquipo,
+                    equipo: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS }
+                  })
+                }
+              >
+                <Text style={estilosComunes.textoBoton}>
+                  + Crear informe correctivo
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <FlatList
@@ -249,6 +239,11 @@ export default function InformesDelEquipo({ route, navigation }) {
                         👤 {item.tecnico}
                       </Text>
                     )}
+                    {item.responsable && (
+                      <Text style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
+                        👤 {item.responsable}
+                      </Text>
+                    )}
                   </View>
                   
                   <View style={[
@@ -263,22 +258,7 @@ export default function InformesDelEquipo({ route, navigation }) {
               </TouchableOpacity>
             )}
             ListFooterComponent={
-              <View style={{ paddingHorizontal: 24, marginTop: 20, gap: 12 }}>
-                <TouchableOpacity
-                  style={[estilosComunes.boton, { backgroundColor: '#3498db' }]}
-                  onPress={() =>
-                    navigation.navigate('Formulario', {
-                      informe: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS },
-                      fechaSeleccionada: new Date().toISOString(),
-                      tipoInforme: 'preventivo'
-                    })
-                  }
-                >
-                  <Text style={estilosComunes.textoBoton}>
-                    + Crear informe preventivo
-                  </Text>
-                </TouchableOpacity>
-
+              <View style={{ paddingHorizontal: 24, marginTop: 20, marginBottom: 20 }}>
                 <TouchableOpacity
                   style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
                   onPress={() =>

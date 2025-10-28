@@ -8,18 +8,24 @@ import InicioSesion from '../interfaz/InicioSesion';
 //Inicio mantenedor /Calendario/Formulario/Evidencia/Firma
 import InicioMantenedor from '../interfaz/InicioMantenedor';
 import PerfilMantenedor from '../interfaz/PerfilMantenedor';
+import CompletarFirmas from '../interfaz/CompletarFirmas';
+import CambioContrasena from '../interfaz/CambiarContrasena';
 
 import BuscarNombre from '../interfaz/BuscarNombre';
 import EscaneoQR from '../interfaz/EscaneoQR';
 import InformesEquipo from '../interfaz/InformesEquipo';
-//import QRScanner from '../interfaz/EscaneoQR';
-//<Stack.Screen name="QRScanner" component={QRScanner} />
+import InformeCorrectivo from '../interfaz/InformeCorrectivo'
+import ProcesosCorrectivo from '../interfaz/ProcesosCorrectivo';
+import ObservacionesCorrectivo from '../interfaz/ObservacionesCorrectivo';
+import EvidenciasCorrectivo from '../interfaz/EvidenciasCorrectivo';
+import ResumenCorrectivo from '../interfaz/ResumenCorrectivo';
 
 import Formulario  from '../interfaz/Formulario';
 import Evidencia from '../interfaz/Evidencia';
 import Firma from '../interfaz/Firma';
 import InformeResumen from '../interfaz/InformeResumen';
 
+import VerInforme from '../interfaz/VerInforme';
 //Inicio Admin /
 
 import InicioAdmin from '../interfaz/InicioAdmin';
@@ -35,10 +41,18 @@ export default function NavegacionInicio() {
 
         <Stack.Screen name="InicioMantenedor" component={InicioMantenedor} />
         <Stack.Screen name="PerfilMantenedor" component={PerfilMantenedor} />
+        <Stack.Screen name="CompletarFirmas" component={CompletarFirmas} />
+        <Stack.Screen name="CambioContrasena" component={CambioContrasena} />
 
         <Stack.Screen name="BuscarNombre" component={BuscarNombre} />
         <Stack.Screen name="InformesEquipo" component={InformesEquipo} />
         <Stack.Screen name="EscaneoQR" component={EscaneoQR} />
+        <Stack.Screen name="InformeCorrectivo" component={InformeCorrectivo} />
+        <Stack.Screen name="ProcesosCorrectivo" component={ProcesosCorrectivo} />
+        <Stack.Screen name="ObservacionesCorrectivo" component={ObservacionesCorrectivo} />
+        <Stack.Screen name="EvidenciasCorrectivo" component={EvidenciasCorrectivo} />
+        <Stack.Screen name="ResumenCorrectivo" component={ResumenCorrectivo} />
+        <Stack.Screen name="VerInforme" component={VerInforme} />
 
         <Stack.Screen name="Formulario" component={Formulario} />
         <Stack.Screen name="Evidencia" component={Evidencia} />

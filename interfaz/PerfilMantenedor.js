@@ -9,6 +9,7 @@ import estilos, { COLORES } from '../assets/estilos';
 import { auth } from '../servicio/firebase-config';
 import { db } from '../servicio/firebase-config';
 import { doc, getDoc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 
 export default function PerfilMantenedor({ navigation }) {
   const [userData, setUserData] = useState(null);
@@ -23,7 +24,9 @@ export default function PerfilMantenedor({ navigation }) {
           const docSnap = await getDoc(docRef);
 
           if (docSnap.exists()) {
-            setUserData(docSnap.data());
+            const data = docSnap.data();
+            console.log("Datos del usuario:", data); // Para debugging
+            setUserData(data);
           } else {
             console.log("No se encontró el documento del usuario en Firestore.");
             Alert.alert("Error", "No se encontró la información del perfil.");
@@ -41,6 +44,35 @@ export default function PerfilMantenedor({ navigation }) {
     fetchUserData();
   }, []);
 
+  const CerrarSesion = () => {
+    Alert.alert(
+      "Cerrar Sesión",
+      "¿Estás seguro que deseas cerrar sesión?",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Cerrar Sesión",
+          onPress: async () => {
+            try {
+              await signOut(auth);
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'InicioSesion' }], 
+              });
+            } catch (error) {
+              console.error("Error al cerrar sesión:", error);
+              Alert.alert("Error", "No se pudo cerrar la sesión. Intenta nuevamente.");
+            }
+          },
+          style: "destructive"
+        }
+      ]
+    );
+  };
+
   if (cargando) {
     return (
       <View style={[estilos.contenedor, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -56,17 +88,18 @@ export default function PerfilMantenedor({ navigation }) {
       <TouchableOpacity onPress={() => navigation.goBack()}>
         <Text style={estilos.flechaVolver}>←</Text>
       </TouchableOpacity>
+      
       <Text style={estilos.etiqueta}>Nombre Completo:</Text>
       <TextInput 
         style={estilos.entrada} 
-        value={userData?.Nombre || 'Cargando...'} 
+        value={userData?.nombre || userData?.Nombre || 'No disponible'} 
         editable={false} 
       />
 
       <Text style={estilos.etiqueta}>Correo:</Text>
       <TextInput 
         style={estilos.entrada} 
-        value={userData?.correo || 'Cargando...'} 
+        value={userData?.correo || userData?.email || userData?.Correo || auth.currentUser?.email || 'No disponible'} 
         editable={false} 
       />
 
@@ -78,16 +111,25 @@ export default function PerfilMantenedor({ navigation }) {
           editable={false}
           secureTextEntry
         />
-        <TouchableOpacity onPress={() => navigation.navigate('CambioContrasenaMantenedor')}>
+        <TouchableOpacity onPress={() => navigation.navigate('CambioContrasena')}>
           <Ionicons name="create-outline" size={24} color="#444" />
         </TouchableOpacity>
       </View>
+
       <Text style={estilos.etiqueta}>Rut:</Text>
       <TextInput 
         style={estilos.entrada} 
-        value={userData?.rut || 'Cargando...'} 
+        value={userData?.rut || userData?.Rut || 'No disponible'} 
         editable={false} 
       />
+
+      <TouchableOpacity 
+        style={[estilos.boton, { backgroundColor: '#dc3545', marginTop: 20 }]}
+        onPress={CerrarSesion}
+      >
+        <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+        <Text style={estilos.textoBoton}>Cerrar Sesión</Text>
+      </TouchableOpacity>
     </View>
   );
 }

@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { auth, db } from "../servicio/firebase-config";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore";
+import { format } from 'date-fns';
 import uploadImage from "../servicio/cloudinary-config";
 
 export default function InformeResumen({ route, navigation }) {
@@ -24,6 +25,7 @@ export default function InformeResumen({ route, navigation }) {
     firmas = {},
     respaldos = {},
     nombres = {}, 
+    mantenimientoId = null, // ID del documento de mantenimiento
   } = route?.params || {};
 
   const uploadDataUri = async (dataUri, nombre = 'firma') => {
@@ -51,6 +53,7 @@ export default function InformeResumen({ route, navigation }) {
   const guardarInforme = async () => {
     setGuardando(true);
     try {
+      // Subir imágenes de evidencia
       const urlsImagenes = [];
       for (const uri of imagenes) {
         try {
@@ -62,6 +65,7 @@ export default function InformeResumen({ route, navigation }) {
         }
       }
 
+      // Subir firmas
       const urlsFirmas = {};
       for (const [key, dataUri] of Object.entries(firmas)) {
         if (dataUri && dataUri.startsWith('data:image')) {
@@ -77,6 +81,7 @@ export default function InformeResumen({ route, navigation }) {
         }
       }
 
+      // Subir respaldos (carnets)
       const urlsRespaldos = {};
       for (const [key, uri] of Object.entries(respaldos)) {
         if (uri) {
@@ -90,6 +95,14 @@ export default function InformeResumen({ route, navigation }) {
         }
       }
 
+      // Verificar si faltan firmas
+      const firmasRequeridas = ['firma_mantenedor', 'firma_supervisor', 'firma_a_calidad_dgm'];
+      const faltanFirmas = firmasRequeridas.some(key => !urlsFirmas[key]);
+      
+      // Determinar el nuevo estado
+      const nuevoEstado = faltanFirmas ? "Faltante de firmas" : "Completado";
+
+      // Guardar el informe en la colección informePreventivo
       const docRef = await addDoc(collection(db, "informePreventivo"), {
         equipo: informe.equipo || "Equipo no definido",
         id_interno: informe.id || "N/A",
@@ -101,10 +114,47 @@ export default function InformeResumen({ route, navigation }) {
         respaldos: urlsRespaldos, 
         nombres: nombres,          
         usuario: auth.currentUser ? auth.currentUser.email : "Anon",
+        estado: nuevoEstado,
       });
 
-      Alert.alert("Éxito", "El informe se guardó correctamente en Firebase.");
-      navigation.navigate("InicioMantenedor");
+      // CRÍTICO: Actualizar el estado del mantenimiento en planificacion
+      if (mantenimientoId && informe.id) {
+        const mantenimientoRef = doc(
+          db, 
+          "planificacion", 
+          informe.id, 
+          "mantenimientos", 
+          mantenimientoId
+        );
+
+        const datosActualizacion = {
+          estado: nuevoEstado,
+          informeId: docRef.id, // Guardar referencia al informe
+          fechaActualizacion: serverTimestamp(),
+        };
+
+        // Si está completado, agregar la fecha de completado
+        if (nuevoEstado === "Completado") {
+          datosActualizacion.fechaCompletado = format(new Date(), 'yyyy-MM-dd');
+        }
+
+        await updateDoc(mantenimientoRef, datosActualizacion);
+        
+        console.log(`✅ Estado del mantenimiento actualizado a: ${nuevoEstado}`);
+      } else {
+        console.warn("⚠️ No se pudo actualizar el estado: falta mantenimientoId o informe.id");
+      }
+
+      Alert.alert(
+        "Éxito", 
+        `El informe se guardó correctamente.\nEstado: ${nuevoEstado}`,
+        [
+          {
+            text: "OK",
+            onPress: () => navigation.navigate("InicioMantenedor")
+          }
+        ]
+      );
 
     } catch (error) {
       console.error('Error guardando informe:', error);
@@ -186,14 +236,6 @@ export default function InformeResumen({ route, navigation }) {
             const respaldoKey = rol === 'calidad' ? 'firma_a_calidad_dgm_Respaldo' : `firma_${rol}_Respaldo`;
             const nombreKey = `nombre_${rol}`;
 
-            console.log(`🔍 ${rol}:`, {
-              firmaKey,
-              firmaValue: firmas[firmaKey],
-              respaldoKey,
-              respaldoValue: respaldos[respaldoKey],
-              nombreValue: nombres[nombreKey]
-            });
-
             return (
               <View key={i} style={estilos.firmaBloque}>
                 <Text style={estilos.nombreRol}>
@@ -214,12 +256,7 @@ export default function InformeResumen({ route, navigation }) {
                         source={{ uri: firmas[firmaKey] }}
                         style={estilos.firmaImagen}
                         resizeMode="contain"
-                        onError={(e) => console.error(`❌ Error cargando firma ${rol}:`, e.nativeEvent.error)}
-                        onLoad={() => console.log(`✅ Firma ${rol} cargada correctamente`)}
                       />
-                      <Text style={estilos.textoDebug}>
-                        {firmas[firmaKey].substring(0, 50)}...
-                      </Text>
                     </>
                   ) : (
                     <Text style={estilos.textoFaltante}>Firma pendiente</Text>
@@ -232,7 +269,6 @@ export default function InformeResumen({ route, navigation }) {
                       source={{ uri: respaldos[respaldoKey] }}
                       style={estilos.imagenRespaldo}
                       resizeMode="cover"
-                      onError={(e) => console.error(`❌ Error cargando respaldo ${rol}:`, e.nativeEvent.error)}
                     />
                   ) : (
                     <Text style={estilos.textoFaltante}>Respaldo no ingresado</Text>
@@ -384,12 +420,6 @@ const estilos = StyleSheet.create({
     color: '#999',
     fontStyle: 'italic',
     paddingVertical: 10,
-  },
-  textoDebug: {
-    fontSize: 10,
-    color: '#999',
-    marginTop: 4,
-    fontFamily: 'monospace',
   },
   botonFinalizar: {
     backgroundColor: '#ff9900',
