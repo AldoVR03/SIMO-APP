@@ -4,9 +4,9 @@ import {
     ScrollView, ActivityIndicator, SafeAreaView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { format, addDays, subDays, startOfWeek, isToday, isBefore, differenceInDays, parseISO } from 'date-fns';
+import { format, addDays, subDays, startOfWeek, isToday, isBefore, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { collection, query, getDocs, doc } from "firebase/firestore";
+import { collection, query, getDocs, doc, where } from "firebase/firestore";
 import { db } from "../servicio/firebase-config";
 import estilos, { COLORES } from '../assets/estilos';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +18,10 @@ export default function InicioMantenedor({ navigation }) {
     const [mostrarRealizados, setMostrarRealizados] = useState(true);
     const [informes, setInformes] = useState([]);
     const [cargando, setCargando] = useState(false);
+
+    const [cacheDatos, setCacheDatos] = useState(null);
+    const [ultimaCarga, setUltimaCarga] = useState(null);
+    
     const lunes = startOfWeek(diaBase, { weekStartsOn: 1 });
 
     const diasSemana = Array.from({ length: 7 }, (_, i) => {
@@ -30,94 +34,129 @@ export default function InicioMantenedor({ navigation }) {
         };
     });
 
-    const cargarInformes = useCallback(async () => {
+    const cargarTodosDatos = useCallback(async () => {
         try {
-            setCargando(true);
+            console.log('🔄 Cargando datos desde Firebase...');
+            const inicio = Date.now();
             
-            const diaSeleccionadoFormato = format(diaSeleccionado, 'yyyy-MM-dd');
-            const hoy = format(new Date(), 'yyyy-MM-dd');
             const equiposQuery = query(collection(db, "planificacion"));
             const equiposSnapshot = await getDocs(equiposQuery);
             
-            let lista = [];
-            
-            for (const equipoDoc of equiposSnapshot.docs) {
+            const todosLosDatos = [];
+
+            const promesas = equiposSnapshot.docs.map(async (equipoDoc) => {
                 const equipoData = equipoDoc.data();
                 const mantenimientosQuery = query(
                     collection(doc(db, "planificacion", equipoDoc.id), "mantenimientos")
                 );
                 const mantenimientosSnapshot = await getDocs(mantenimientosQuery);
                 
-                for (const mantenimientoDoc of mantenimientosSnapshot.docs) {
-                    const mantenimientoData = mantenimientoDoc.data();
-                    const estado = mantenimientoData.estado;
-                    
-                    if (mostrarRealizados) {
-                        if (mantenimientoData.fecha === diaSeleccionadoFormato) {
-                            if (estado === "Pendiente" || estado === "proceso") {
-                                lista.push({
-                                    id: equipoDoc.id,
-                                    equipo: equipoData.equipo,
-                                    codigo_sgs: equipoData.codigo_sgs || equipoDoc.id,
-                                    mantenimientoDelDia: {
-                                        id: mantenimientoDoc.id,
-                                        ...mantenimientoData
-                                    }
-                                });
-                                break;
-                            }
-                        }
-                    } 
-                    else {
-                        if (estado === "Completado" && mantenimientoData.fechaCompletado) {
-                            const fechaCompletado = mantenimientoData.fechaCompletado;
-                            const fechaLimite = format(addDays(parseISO(fechaCompletado), 4), 'yyyy-MM-dd');
-
-                            if (diaSeleccionadoFormato >= fechaCompletado && diaSeleccionadoFormato <= fechaLimite) {
-                                lista.push({
-                                    id: equipoDoc.id,
-                                    equipo: equipoData.equipo,
-                                    codigo_sgs: equipoData.codigo_sgs || equipoDoc.id,
-                                    mantenimientoDelDia: {
-                                        id: mantenimientoDoc.id,
-                                        ...mantenimientoData
-                                    }
-                                });
-                                break;
-                            }
-                        }
-
-                        if (estado === "Faltante de firmas" && mantenimientoData.fecha === diaSeleccionadoFormato) {
-                            lista.push({
-                                id: equipoDoc.id,
-                                equipo: equipoData.equipo,
-                                codigo_sgs: equipoData.codigo_sgs || equipoDoc.id,
-                                mantenimientoDelDia: {
-                                    id: mantenimientoDoc.id,
-                                    ...mantenimientoData
-                                }
-                            });
-                            break;
-                        }
-                    }
-                }
-            }
+                mantenimientosSnapshot.docs.forEach((mantenimientoDoc) => {
+                    todosLosDatos.push({
+                        equipoId: equipoDoc.id,
+                        equipo: equipoData.equipo,
+                        codigo_sgs: equipoData.codigo_sgs || equipoDoc.id,
+                        mantenimientoId: mantenimientoDoc.id,
+                        ...mantenimientoDoc.data()
+                    });
+                });
+            });
             
-            console.log(`📊 Informes cargados (${mostrarRealizados ? 'A Realizar' : 'Terminados'}):`, lista.length);
-            setInformes(lista);
+            await Promise.all(promesas);
+            
+            const fin = Date.now();
+            console.log(`✅ Datos cargados en ${fin - inicio}ms. Total: ${todosLosDatos.length} registros`);
+            
+            return todosLosDatos;
+        } catch (error) {
+            console.error("❌ Error al cargar datos:", error);
+            return [];
+        }
+    }, []);
+
+    const filtrarInformes = useCallback((datos, fecha, soloRealizados) => {
+        const fechaFormato = format(fecha, 'yyyy-MM-dd');
+        
+        const filtrados = datos.filter((item) => {
+            const estado = item.estado;
+            
+            if (soloRealizados) {
+                return item.fecha === fechaFormato && 
+                       (estado === "Pendiente" || estado === "proceso");
+            } else {
+                if (estado === "Completado" && item.fechaCompletado) {
+                    const fechaCompletado = item.fechaCompletado;
+                    const fechaLimite = format(addDays(parseISO(fechaCompletado), 4), 'yyyy-MM-dd');
+                    return fechaFormato >= fechaCompletado && fechaFormato <= fechaLimite;
+                }
+                
+                if (estado === "Faltante de firmas" && item.fecha === fechaFormato) {
+                    return true;
+                }
+                
+                return false;
+            }
+        });
+
+        return filtrados.map(item => ({
+            id: item.equipoId,
+            equipo: item.equipo,
+            codigo_sgs: item.codigo_sgs,
+            mantenimientoDelDia: {
+                id: item.mantenimientoId,
+                fecha: item.fecha,
+                estado: item.estado,
+                fechaCompletado: item.fechaCompletado
+            }
+        }));
+    }, []);
+
+    const cargarInformes = useCallback(async (forzarRecarga = false) => {
+        try {
+            setCargando(true);
+            
+            const ahora = Date.now();
+            const CACHE_DURACION = 5 * 60 * 1000; 
+
+            if (!forzarRecarga && cacheDatos && ultimaCarga && (ahora - ultimaCarga < CACHE_DURACION)) {
+                console.log('⚡ Usando caché (instantáneo)');
+                const informesFiltrados = filtrarInformes(cacheDatos, diaSeleccionado, mostrarRealizados);
+                setInformes(informesFiltrados);
+                setCargando(false);
+                return;
+            }
+
+            console.log('📡 Recargando desde Firebase...');
+            const nuevosDatos = await cargarTodosDatos();
+            setCacheDatos(nuevosDatos);
+            setUltimaCarga(ahora);
+            
+            const informesFiltrados = filtrarInformes(nuevosDatos, diaSeleccionado, mostrarRealizados);
+            setInformes(informesFiltrados);
+            
         } catch (error) {
             console.error("❌ Error al cargar informes:", error);
         } finally {
             setCargando(false);
         }
-    }, [diaSeleccionado, mostrarRealizados]);
+    }, [diaSeleccionado, mostrarRealizados, cacheDatos, ultimaCarga, cargarTodosDatos, filtrarInformes]);
 
     useFocusEffect(
         useCallback(() => {
-            console.log('🔄 Pantalla enfocada, recargando informes...');
-            cargarInformes();
-        }, [cargarInformes])
+            console.log('🔄 Pantalla enfocada');
+            cargarInformes(true); 
+        }, [])
     );
+
+    useEffect(() => {
+        if (cacheDatos) {
+            console.log('⚡ Filtrando desde caché');
+            const informesFiltrados = filtrarInformes(cacheDatos, diaSeleccionado, mostrarRealizados);
+            setInformes(informesFiltrados);
+        } else {
+            cargarInformes();
+        }
+    }, [diaSeleccionado, mostrarRealizados]);
 
     const obtenerEstadoTextoYColor = (informe) => {
         const mantenimientoDelDia = informe.mantenimientoDelDia;
@@ -230,9 +269,23 @@ export default function InicioMantenedor({ navigation }) {
                     </TouchableOpacity>
                 </View>
 
+                {cacheDatos && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }}>
+                        <Ionicons name="flash" size={12} color="#2ecc71" />
+                        <Text style={{ fontSize: 10, color: '#2ecc71', marginLeft: 4 }}>
+                          
+                        </Text>
+                    </View>
+                )}
+
                 <ScrollView style={{ flex: 1 }}>
                     {cargando ? (
-                        <ActivityIndicator size="large" color={COLORES.primario} style={{ marginTop: 20 }} />
+                        <View style={{ marginTop: 40, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color={COLORES.primario} />
+                            <Text style={{ marginTop: 10, color: '#888' }}>
+                                Cargando informes...
+                            </Text>
+                        </View>
                     ) : informes.length === 0 ? (
                         <Text style={{ padding: 20, textAlign: 'center', color: '#888' }}>
                             No hay informes disponibles para esta fecha.
@@ -271,7 +324,6 @@ export default function InicioMantenedor({ navigation }) {
                                 const estado = informeSeleccionado.mantenimientoDelDia.estado;
 
                                 if (estado === "Faltante de firmas") {
-                                    console.log('Navegando a CompletarFirmas');
                                     navigation.navigate('CompletarFirmas', {
                                         informe: informeSeleccionado,
                                         mantenimientoId: informeSeleccionado.mantenimientoDelDia.id
@@ -281,12 +333,6 @@ export default function InicioMantenedor({ navigation }) {
                                     Alert.alert('Informe Completado', 'Este informe ya está completado y firmado.');
                                 }
                                 else {
-                                    console.log('📤 Navegando a Formulario con:', {
-                                        equipoId: informeSeleccionado.id,
-                                        mantenimientoId: informeSeleccionado.mantenimientoDelDia.id,
-                                        fecha: diaSeleccionado.toISOString()
-                                    });
-                                    
                                     navigation.navigate('Formulario', {
                                         informe: informeSeleccionado,
                                         fechaSeleccionada: diaSeleccionado.toISOString(),
@@ -307,8 +353,10 @@ export default function InicioMantenedor({ navigation }) {
                 )}
 
                 <View style={estilos.botonera}>
-                    <TouchableOpacity style={estilos.botonIcono}
-                    onPress={() => navigation.navigate('EscaneoQR')}>
+                    <TouchableOpacity 
+                        style={estilos.botonIcono}
+                        onPress={() => navigation.navigate('EscaneoQR')}
+                    >
                         <Ionicons name="qr-code-outline" size={32} color={COLORES.primario} />
                         <Text style={estilos.textoBotonIcono}>Escanear QR</Text>
                     </TouchableOpacity>

@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   SafeAreaView,
 } from 'react-native';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../servicio/firebase-config';
 import estilosComunes, { COLORES } from '../assets/estilos';
 
@@ -200,12 +200,16 @@ export default function InformesDelEquipo({ route, navigation }) {
                     borderColor: obtenerColorTipo(item.tipo || 'Preventivo')
                   }
                 ]}
-                onPress={() =>
-                  navigation.navigate('VerInforme', {
-                    informeId: item.id,
-                    informe: item
-                  })
-                }
+                onPress={() => {
+                  const esCorrectivo = item.tipo === 'Correctivo';
+                  navigation.navigate(
+                    esCorrectivo ? 'VerInformeCorrectivo' : 'VerInformePreventivo',
+                    {
+                      informeId: item.id,
+                      informe: item
+                    }
+                  );
+                }}
               >
                 <View style={estilosComunes.tarjetaContenido}>
                   <View style={{ flex: 1 }}>

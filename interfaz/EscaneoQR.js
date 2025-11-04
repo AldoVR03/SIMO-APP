@@ -1,118 +1,172 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORES } from '../assets/estilos';
 
-const uploadToCloudinary = async (uri) => {
-  const data = new FormData();
-  data.append("file", {
-    uri,
-    type: "image/jpeg",
-    name: "evidencia.jpg",
-  });
-  data.append("upload_preset", "SIMO-APP-Evidencia-Firma"); 
+export default function EscanerQR({ navigation }) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [escaneado, setEscaneado] = useState(false);
+  const [procesando, setProcesando] = useState(false);
 
-  try {
-    const res = await fetch("https://api.cloudinary.com/v1_1/due9nyqmr/image/upload", {
-      method: "POST",
-      body: data,
-    });
-
-    const json = await res.json();
-    return json.secure_url;
-  } catch (err) {
-    console.error("Error subiendo a Cloudinary:", err);
-    return null;
-  }
-};
-
-export default function Evidencia({ navigation, route }) {
-  console.log("✅ Datos recibidos en Evidencia:", route.params);
-  const { informe, respuestas, mantenimientoId } = route.params;
-  const [imagenes, setImagenes] = useState([]);
-
-  const seleccionarImagen = async () => {
-    if (imagenes.length >= 2) {
-      Alert.alert('Límite alcanzado', 'Solo se permiten 2 evidencias.');
-      return;
-    }
-
-    const resultado = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-      allowsEditing: true,
-    });
-
-    if (!resultado.canceled) {
-      const uri = resultado.assets[0].uri;
-      const cloudUrl = await uploadToCloudinary(uri);
-
-      if (cloudUrl) {
-        setImageenes([...imagenes, cloudUrl]);
+  useEffect(() => {
+    // Solicitar permisos al montar el componente
+    (async () => {
+      if (!permission?.granted) {
+        await requestPermission();
       }
+    })();
+  }, []);
+
+  const manejarEscaneo = ({ data }) => {
+    if (escaneado || procesando) return;
+
+    setEscaneado(true);
+    setProcesando(true);
+
+    try {
+      console.log('📱 QR escaneado:', data);
+
+      // Aquí puedes parsear el QR según tu formato
+      // Ejemplo: Si el QR contiene un ID de equipo
+      const equipoId = data;
+
+      // Navegar a InformesEquipo con los datos del QR
+      navigation.navigate('InformesEquipo', {
+        equipoId: equipoId,
+        qrData: data,
+      });
+
+      // Reset después de navegar
+      setTimeout(() => {
+        setEscaneado(false);
+        setProcesando(false);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error procesando QR:', error);
+      Alert.alert('Error', 'Código QR inválido');
+      setEscaneado(false);
+      setProcesando(false);
     }
   };
 
-  const fechaActual = new Date().toLocaleDateString('es-ES', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  // Si no hay permisos aún
+  if (!permission) {
+    return (
+      <View style={estilos.contenedor}>
+        <ActivityIndicator size="large" color={COLORES.primario} />
+        <Text style={estilos.textoCargando}>Cargando cámara...</Text>
+      </View>
+    );
+  }
+
+  // Si los permisos fueron denegados
+  if (!permission.granted) {
+    return (
+      <View style={estilos.contenedor}>
+        <SafeAreaView style={estilos.contenedor}>
+          <View style={estilos.sinPermiso}>
+            <Ionicons name="camera-off" size={60} color="#999" />
+            <Text style={estilos.textoSinPermiso}>
+              Se necesita acceso a la cámara para escanear códigos QR
+            </Text>
+            <TouchableOpacity
+              style={estilos.botonPermiso}
+              onPress={requestPermission}
+            >
+              <Text style={estilos.textoBotonPermiso}>Otorgar Permiso</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <View style={estilos.contenedor}>
       <SafeAreaView style={estilos.contenedor}>
+        {/* Header */}
         <View style={estilos.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={estilos.backButton}>
+          <TouchableOpacity 
+            onPress={() => navigation.goBack()} 
+            style={estilos.backButton}
+          >
             <Text style={estilos.flechaVolver}>←</Text>
           </TouchableOpacity>
-          <Text style={estilos.titulo}>Evidencia</Text>
+          <Text style={estilos.titulo}>Escanear QR</Text>
+          <View style={estilos.espaciador} />
         </View>
 
-        <View style={estilos.areaImagenes}>
-          {[...Array(2)].map((_, i) => (
-            <TouchableOpacity
-              key={i}
-              style={estilos.recuadro}
-              onPress={seleccionarImagen}
-              disabled={imagenes[i] ? true : imagenes.length >= 2}
-            >
-              {imagenes[i] ? (
-                <Image source={{ uri: imagenes[i] }} style={estilos.imagen} />
-              ) : (
-                <>
-                  <Ionicons name="add" size={40} color="#aaa" />
-                  <Text style={estilos.textoAgregar}>Agregar evidencia</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={estilos.botonesInferiores}>
-          <TouchableOpacity
-            style={estilos.botonFirmar}
-            onPress={() => {
-              console.log('📤 Navegando a Firma con mantenimientoId:', mantenimientoId);
-              navigation.navigate('Firma', {
-                equipo: informe?.equipo || "Equipo no definido",
-                informe,
-                respuestas,
-                imagenes,
-                mantenimientoId, // ← CRÍTICO: Pasar mantenimientoId
-              });
+        {/* Cámara */}
+        <View style={estilos.camaraContainer}>
+          <CameraView
+            style={estilos.camara}
+            facing="back"
+            onBarcodeScanned={escaneado ? undefined : manejarEscaneo}
+            barcodeScannerSettings={{
+              barcodeTypes: ['qr'],
             }}
           >
-            <Text style={estilos.textoBoton}>Ir a firmar</Text>
+            {/* Overlay con marco */}
+            <View style={estilos.overlay}>
+              <View style={estilos.marcoQR}>
+                <View style={[estilos.esquina, estilos.esquinaSuperiorIzq]} />
+                <View style={[estilos.esquina, estilos.esquinaSuperiorDer]} />
+                <View style={[estilos.esquina, estilos.esquinaInferiorIzq]} />
+                <View style={[estilos.esquina, estilos.esquinaInferiorDer]} />
+              </View>
+            </View>
+
+            {/* Texto de instrucción */}
+            <View style={estilos.instruccionContainer}>
+              <Text style={estilos.textoInstruccion}>
+                {procesando ? 'Procesando...' : 'Apunta al código QR del equipo'}
+              </Text>
+            </View>
+
+            {/* Indicador de procesamiento */}
+            {procesando && (
+              <View style={estilos.procesandoContainer}>
+                <ActivityIndicator size="large" color="#fff" />
+              </View>
+            )}
+          </CameraView>
+        </View>
+
+        {/* Botón manual (opcional) */}
+        <View style={estilos.botonesInferiores}>
+          <TouchableOpacity
+            style={estilos.botonManual}
+            onPress={() => {
+              Alert.alert(
+                'Entrada manual',
+                'Ingrese el ID del equipo',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      // Aquí puedes implementar entrada manual si lo necesitas
+                      navigation.navigate('InformesEquipo', {
+                        equipoId: 'MANUAL',
+                      });
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Ionicons name="create-outline" size={20} color="#fff" />
+            <Text style={estilos.textoBotonManual}>Entrada Manual</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -120,26 +174,26 @@ export default function Evidencia({ navigation, route }) {
   );
 }
 
-
 const estilos = StyleSheet.create({
   contenedor: {
     flex: 1,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
+    backgroundColor: '#000',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
     paddingTop: 16,
-    marginBottom: 20,
+    paddingBottom: 10,
+    backgroundColor: '#fff',
   },
   backButton: {
     paddingRight: 12,
   },
   flechaVolver: {
     fontSize: 26,
-    color: '#ff9900',
+    color: COLORES.primario,
     fontWeight: 'bold',
   },
   titulo: {
@@ -147,49 +201,130 @@ const estilos = StyleSheet.create({
     fontWeight: 'bold',
     flex: 1,
     textAlign: 'center',
+    color: '#000',
   },
-  fecha: {
-    fontSize: 14,
-    color: '#666',
+  espaciador: {
+    width: 38,
   },
-  areaImagenes: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 30,
+  camaraContainer: {
+    flex: 1,
+    overflow: 'hidden',
   },
-  recuadro: {
-    width: '48%',
-    height: 180,
-    borderWidth: 2,
-    borderColor: '#ccc',
-    borderRadius: 10,
+  camara: {
+    flex: 1,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fafafa',
   },
-  textoAgregar: {
-    marginTop: 8,
-    color: '#888',
-    fontSize: 12,
+  marcoQR: {
+    width: 250,
+    height: 250,
+    backgroundColor: 'transparent',
+    position: 'relative',
   },
-  imagen: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 8,
+  esquina: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderColor: COLORES.primario,
+  },
+  esquinaSuperiorIzq: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+  },
+  esquinaSuperiorDer: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+  },
+  esquinaInferiorIzq: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+  },
+  esquinaInferiorDer: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+  },
+  instruccionContainer: {
+    position: 'absolute',
+    bottom: 100,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  textoInstruccion: {
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  procesandoContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -25,
+    marginTop: -25,
   },
   botonesInferiores: {
-    marginTop: 'auto',
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    backgroundColor: '#fff',
   },
-  botonFirmar: {
-    backgroundColor: COLORES.primario,
+  botonManual: {
+    backgroundColor: '#666',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
-    elevation: 2,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
   },
-  textoBoton: {
+  textoBotonManual: {
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 16,
+  },
+  sinPermiso: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    backgroundColor: '#fff',
+  },
+  textoSinPermiso: {
+    fontSize: 16,
+    textAlign: 'center',
+    color: '#666',
+    marginTop: 20,
+    marginBottom: 30,
+  },
+  botonPermiso: {
+    backgroundColor: COLORES.primario,
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 8,
+  },
+  textoBotonPermiso: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  textoCargando: {
+    marginTop: 20,
+    fontSize: 16,
+    color: '#666',
   },
 });

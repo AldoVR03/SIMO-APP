@@ -107,6 +107,9 @@ export default function InformeResumen({ route, navigation }) {
         equipo: informe.equipo || "Equipo no definido",
         id_interno: informe.id || "N/A",
         codigo_sgs: informe.codigo_sgs || "N/A",
+        marca: informe.marca || "N/A",
+        modelo: informe.modelo || "N/A",
+        numero_serie: informe.numero_serie || "N/A",
         fecha: serverTimestamp(),
         respuestas: respuestas,
         evidencias: urlsImagenes, 
@@ -181,10 +184,11 @@ export default function InformeResumen({ route, navigation }) {
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Datos del equipo</Text>
           <Text style={estilos.textoItem}>Nombre: {informe.equipo || 'Equipo no definido'}</Text>
-          <Text style={estilos.textoItem}>ID interno: {informe.id || 'N/A'}</Text>
           <Text style={estilos.textoItem}>Código SGS: {informe.codigo_sgs || 'N/A'}</Text>
+          <Text style={estilos.textoItem}>Marca: {informe.marca || 'N/A'}</Text>
+          <Text style={estilos.textoItem}>Modelo: {informe.modelo || 'N/A'}</Text>
+          <Text style={estilos.textoItem}>Numero de serie: {informe.numero_serie || 'N/A'}</Text>
           <Text style={estilos.textoItem}>Fecha: {fechaActual}</Text>
-          <Text style={estilos.textoItem}>Estado: {informe.estado || 'N/A'}</Text>
         </View>
 
         <View style={estilos.seccion}>
@@ -230,7 +234,7 @@ export default function InformeResumen({ route, navigation }) {
         </View>
 
         <View style={estilos.seccion}>
-          <Text style={estilos.tituloSeccion}>Firmas y respaldos</Text>
+          <Text style={estilos.tituloSeccion}>Firmas</Text>
           {['mantenedor', 'supervisor', 'calidad'].map((rol, i) => {
             const firmaKey = rol === 'calidad' ? 'firma_a_calidad_dgm' : `firma_${rol}`;
             const respaldoKey = rol === 'calidad' ? 'firma_a_calidad_dgm_Respaldo' : `firma_${rol}_Respaldo`;
@@ -260,18 +264,6 @@ export default function InformeResumen({ route, navigation }) {
                     </>
                   ) : (
                     <Text style={estilos.textoFaltante}>Firma pendiente</Text>
-                  )}
-                </View>
-                <View style={estilos.respaldoContenedor}>
-                  <Text style={estilos.subtitulo}>Respaldo (Carnet):</Text>
-                  {respaldos[respaldoKey] ? (
-                    <Image
-                      source={{ uri: respaldos[respaldoKey] }}
-                      style={estilos.imagenRespaldo}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <Text style={estilos.textoFaltante}>Respaldo no ingresado</Text>
                   )}
                 </View>
               </View>

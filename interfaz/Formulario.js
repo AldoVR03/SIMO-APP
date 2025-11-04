@@ -8,6 +8,7 @@ import {
     TextInput,
     ActivityIndicator,
     SafeAreaView,
+    Alert,
 } from 'react-native';
 import { collection, doc, getDoc } from "firebase/firestore";
 import { db } from "../servicio/firebase-config";
@@ -20,8 +21,48 @@ export default function Formulario({ route, navigation }) {
     const [respuestas, setRespuestas] = useState({});
     const [preguntas, setPreguntas] = useState([]);
     const [cargando, setCargando] = useState(true);
+    const [informeCompleto, setInformeCompleto] = useState(null);
 
     const { informe, mantenimientoId } = route.params;
+
+useEffect(() => {
+    async function cargarDatosCompletos() {
+        try {
+            setCargando(true);
+
+            if (informe && (informe.codigo_sgs || informe.id)) {
+                const idDoc = informe.codigo_sgs || informe.id;
+                const equipoRef = doc(db, "plantilla", idDoc);
+                const equipoSnap = await getDoc(equipoRef);
+
+                if (equipoSnap.exists()) {
+                    const datosEquipo = equipoSnap.data();
+                    const informeConDatos = {
+                        ...informe,
+                        marca: datosEquipo.marca || 'No especificado',
+                        modelo: datosEquipo.modelo || 'No especificado',
+                        numero_serie: datosEquipo.numero_serie || 'No especificado'
+                    };
+                    setInformeCompleto(informeConDatos);
+                    console.log('✅ Datos del equipo cargados:', informeConDatos);
+                } else {
+                    setInformeCompleto(informe);
+                    console.log('⚠️ No se encontró el documento del equipo en plantilla');
+                }
+            } else {
+                setInformeCompleto(informe);
+            }
+        } catch (error) {
+            console.error('❌ Error al cargar datos del equipo:', error);
+            setInformeCompleto(informe);
+        } finally {
+            setCargando(false);
+        }
+    }
+
+    cargarDatosCompletos();
+}, [informe?.codigo_sgs, informe?.id]);
+
 
     useEffect(() => {
         async function cargarPautaMantenimiento() {
@@ -91,13 +132,16 @@ export default function Formulario({ route, navigation }) {
         });
     };
 
-    const agregarComentario = (preguntaTexto, indice, comentario) => {
-        if (!comentario.trim()) return;
+    const agregarAccion = (preguntaTexto, indice, accion) => {
+        if (!accion.trim()) return;
 
         setRespuestas(prevRespuestas => {
             const nuevaRespuesta = {
                 ...prevRespuestas[indice],
-                otros: [...(prevRespuestas[indice]?.otros || []), comentario.trim()],
+                otros: [
+                    ...(prevRespuestas[indice]?.otros || []),
+                    { accion: accion.trim(), respuesta: null }
+                ],
             };
             return {
                 ...prevRespuestas,
@@ -106,14 +150,32 @@ export default function Formulario({ route, navigation }) {
         });
     };
 
-    const eliminarComentario = (indicePregunta, indiceComentario) => {
+    const actualizarRespuestaAccion = (indicePregunta, indiceAccion, respuesta) => {
         setRespuestas(prevRespuestas => {
-            const comentariosActualizados = prevRespuestas[indicePregunta].otros.filter(
-                (_, i) => i !== indiceComentario
+            const otrosActualizados = [...prevRespuestas[indicePregunta].otros];
+            otrosActualizados[indiceAccion] = {
+                ...otrosActualizados[indiceAccion],
+                respuesta: respuesta,
+            };
+            const nuevaRespuesta = {
+                ...prevRespuestas[indicePregunta],
+                otros: otrosActualizados,
+            };
+            return {
+                ...prevRespuestas,
+                [indicePregunta]: nuevaRespuesta,
+            };
+        });
+    };
+
+    const eliminarAccion = (indicePregunta, indiceAccion) => {
+        setRespuestas(prevRespuestas => {
+            const otrosActualizados = prevRespuestas[indicePregunta].otros.filter(
+                (_, i) => i !== indiceAccion
             );
             const nuevaRespuesta = {
                 ...prevRespuestas[indicePregunta],
-                otros: comentariosActualizados,
+                otros: otrosActualizados,
             };
             return {
                 ...prevRespuestas,
@@ -123,14 +185,68 @@ export default function Formulario({ route, navigation }) {
     };
 
     const navegarAEvidencia = () => {
+        // Verificar si todas las preguntas obligatorias están respondidas
+        const preguntasSinResponder = [];
+        
+        // Encontrar el índice de la pregunta "Otros"
+        const indiceOtros = preguntas.findIndex(p => {
+            const texto = p.pregunta || p;
+            return texto === 'Otros';
+        });
+        
+        // Si "Otros" tiene respuesta "No", solo validar que "Otros" esté respondido
+        const otrosRespondioNo = indiceOtros !== -1 && respuestas[indiceOtros]?.respuesta === 'No';
+        
+        preguntas.forEach((pregunta, index) => {
+            const preguntaTexto = pregunta.pregunta || pregunta;
+            const esOtros = preguntaTexto === 'Otros';
+            
+            // Si "Otros" respondió "No", no validar las demás preguntas
+            if (otrosRespondioNo && !esOtros) {
+                return;
+            }
+            
+            // Validar que la pregunta tenga respuesta
+            if (!respuestas[index]?.respuesta) {
+                preguntasSinResponder.push(preguntaTexto);
+            }
+            
+            // Si es "Otros" y respondió "Sí", validar que todas las acciones tengan respuesta
+            if (esOtros && respuestas[index]?.respuesta === 'Sí') {
+                const acciones = respuestas[index]?.otros || [];
+                const accionesSinResponder = acciones.filter(acc => !acc.respuesta);
+                
+                if (accionesSinResponder.length > 0) {
+                    accionesSinResponder.forEach(acc => {
+                        preguntasSinResponder.push(`"${acc.accion}" en Otros mantenciones`);
+                    });
+                }
+            }
+        });
+        
+        // Si hay preguntas sin responder, mostrar alerta
+        if (preguntasSinResponder.length > 0) {
+            const mensaje = preguntasSinResponder.length === 1
+                ? `Falta responder la siguiente pregunta:\n\n• ${preguntasSinResponder[0]}`
+                : `Faltan responder las siguientes preguntas:\n\n${preguntasSinResponder.map(p => `• ${p}`).join('\n')}`;
+            
+            Alert.alert(
+                'Preguntas sin responder',
+                mensaje,
+                [{ text: 'Entendido', style: 'default' }]
+            );
+            return;
+        }
+        
+        // Si todo está correcto, navegar a Evidencia
         navigation.navigate('Evidencia', {
-            informe,
+            informe: informeCompleto || informe,
             respuestas,
             mantenimientoId,
         });
     };
 
-    if (cargando) {
+    if (cargando || !informeCompleto) {
         return (
             <View style={estilos.contenedorCargando}>
                 <ActivityIndicator size="large" color="#0000ff" />
@@ -153,8 +269,11 @@ export default function Formulario({ route, navigation }) {
                     contentContainerStyle={{ paddingBottom: 140 }}
                 >
                     <View style={estilos.info}>
-                        <Text style={estilos.textoInfo}>Equipo: {informe.equipo || 'No especificado'}</Text>
-                        <Text style={estilos.textoInfo}>Código SGS: {informe.codigo_sgs || 'No especificado'}</Text>
+                        <Text style={estilos.textoInfo}>Equipo: {informeCompleto?.equipo || 'No especificado'}</Text>
+                        <Text style={estilos.textoInfo}>Código SGS: {informeCompleto?.codigo_sgs || 'No especificado'}</Text>
+                        <Text style={estilos.textoInfo}>Marca: {informeCompleto?.marca || 'Cargando...'}</Text>
+                        <Text style={estilos.textoInfo}>Modelo: {informeCompleto?.modelo || 'Cargando...'}</Text>
+                        <Text style={estilos.textoInfo}>Número de serie: {informeCompleto?.numero_serie || 'Cargando...'}</Text>
                     </View>
                     {preguntas.length === 0 ? (
                         <View style={estilos.mensajeVacio}>
@@ -162,7 +281,7 @@ export default function Formulario({ route, navigation }) {
                                 No se encontraron preguntas para este equipo.
                             </Text>
                             <Text style={estilos.textoMensajeVacioDetalle}>
-                                Verifica que exista una plantilla con ID: {informe.id}
+                                Verifica que exista una plantilla con ID: {informeCompleto?.id || informe?.id}
                             </Text>
                         </View>
                     ) : (
@@ -197,10 +316,11 @@ export default function Formulario({ route, navigation }) {
                                         ))}
                                     </View>
                                     {isOtros && respuestaActual === 'Sí' && (
-                                        <OtrosComentarios
-                                            comentarios={comentariosActuales}
-                                            onAdd={(comentario) => agregarComentario(preguntaTexto, index, comentario)}
-                                            onDelete={(i) => eliminarComentario(index, i)}
+                                        <OtrosAcciones
+                                            acciones={comentariosActuales}
+                                            onAdd={(accion) => agregarAccion(preguntaTexto, index, accion)}
+                                            onUpdateRespuesta={(i, resp) => actualizarRespuestaAccion(index, i, resp)}
+                                            onDelete={(i) => eliminarAccion(index, i)}
                                         />
                                     )}
                                 </View>
@@ -221,7 +341,7 @@ export default function Formulario({ route, navigation }) {
     );
 }
 
-const OtrosComentarios = ({ comentarios, onAdd, onDelete }) => {
+const OtrosAcciones = ({ acciones, onAdd, onUpdateRespuesta, onDelete }) => {
     const [entradaTemporal, setEntradaTemporal] = useState('');
 
     const handleAdd = () => {
@@ -231,10 +351,10 @@ const OtrosComentarios = ({ comentarios, onAdd, onDelete }) => {
 
     return (
         <View style={estilos.otrosBloque}>
-            <Text style={estilos.tituloComentarios}>Observaciones:</Text>
+            <Text style={estilos.tituloComentarios}>Otras mantenciones realizadas:</Text>
             <View style={estilos.entradaFila}>
                 <TextInput
-                    placeholder="Escribe una observación"
+                    placeholder="Ej: Limpieza de tuberías"
                     style={estilos.inputTexto}
                     value={entradaTemporal}
                     onChangeText={setEntradaTemporal}
@@ -248,15 +368,36 @@ const OtrosComentarios = ({ comentarios, onAdd, onDelete }) => {
                     <Text style={estilos.textoBotonMas}>+</Text>
                 </TouchableOpacity>
             </View>
-            {comentarios.map((comentario, i) => (
-                <View key={i} style={estilos.comentarioContainer}>
-                    <Text style={estilos.comentarioItem}>• {comentario}</Text>
-                    <TouchableOpacity
-                        onPress={() => onDelete(i)}
-                        style={estilos.botonEliminar}
-                    >
-                        <Text style={estilos.textoEliminar}>×</Text>
-                    </TouchableOpacity>
+            {acciones.map((accion, i) => (
+                <View key={i} style={estilos.accionContainer}>
+                    <View style={estilos.accionHeader}>
+                        <Text style={estilos.accionTexto}>• {accion.accion}</Text>
+                        <TouchableOpacity
+                            onPress={() => onDelete(i)}
+                            style={estilos.botonEliminar}
+                        >
+                            <Text style={estilos.textoEliminar}>×</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <View style={estilos.opcionesAccion}>
+                        {opciones.map((op, idx) => (
+                            <TouchableOpacity
+                                key={idx}
+                                style={[
+                                    estilos.opcionAccion,
+                                    accion.respuesta === op && estilos.opcionSeleccionada,
+                                ]}
+                                onPress={() => onUpdateRespuesta(i, op)}
+                            >
+                                <Text style={[
+                                    estilos.textoOpcionAccion,
+                                    accion.respuesta === op && estilos.textoOpcionSeleccionada
+                                ]}>
+                                    {op}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
                 </View>
             ))}
         </View>
@@ -433,6 +574,44 @@ const estilos = StyleSheet.create({
         fontStyle: 'italic',
         color: '#444',
         fontSize: 14,
+    },
+    accionContainer: {
+        backgroundColor: '#f9f9f9',
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+    },
+    accionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+    },
+    accionTexto: {
+        flex: 1,
+        fontWeight: '600',
+        color: '#333',
+        fontSize: 14,
+    },
+    opcionesAccion: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 6,
+    },
+    opcionAccion: {
+        padding: 8,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#ccc',
+        flex: 1,
+        alignItems: 'center',
+        backgroundColor: '#fff',
+    },
+    textoOpcionAccion: {
+        fontSize: 12,
+        color: '#333',
     },
     botonEliminar: {
         marginLeft: 8,

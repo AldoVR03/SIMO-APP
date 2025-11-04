@@ -1,19 +1,18 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Platform,
   TextInput,
   ScrollView,
   Alert,
-  KeyboardAvoidingView,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../assets/estilos';
+import { auth, db } from '../servicio/firebase-config';
+import { doc, getDoc } from 'firebase/firestore';
 
 const SignatureCanvas =
   Platform.OS !== 'web'
@@ -27,19 +26,13 @@ export default function Firma({ navigation, route }) {
     informe = {},
     respuestas = {},
     imagenes = [],
-    mantenimientoId, // ← RECIBIR mantenimientoId
+    mantenimientoId,
   } = route?.params || {};
 
   const [firmas, setFirmas] = useState({
     firma_mantenedor: null,
     firma_supervisor: null,
     firma_a_calidad_dgm: null,
-  });
-
-  const [respaldos, setRespaldos] = useState({
-    firma_mantenedor_Respaldo: null,
-    firma_supervisor_Respaldo: null,
-    firma_a_calidad_dgm_Respaldo: null,
   });
 
   const [nombres, setNombres] = useState({
@@ -53,8 +46,46 @@ export default function Firma({ navigation, route }) {
     supervisor: useRef(),
     calidad: useRef(),
   };
-const [scrollEnabled, setScrollEnabled] = useState(true);
+
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   const roles = ['mantenedor', 'supervisor', 'calidad'];
+
+  // Cargar nombre del usuario autenticado al montar el componente
+  useEffect(() => {
+    const cargarNombreUsuario = async () => {
+      try {
+        const usuarioActual = auth.currentUser;
+        if (usuarioActual) {
+          const uid = usuarioActual.uid;
+          console.log('📋 Cargando datos del usuario:', uid);
+          
+          const docRef = doc(db, 'Usuario', uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const datosUsuario = docSnap.data();
+            const nombre = datosUsuario.nombre || datosUsuario.displayName || '';
+            
+            if (nombre) {
+              setNombres(prev => ({
+                ...prev,
+                nombre_mantenedor: nombre
+              }));
+              console.log('✅ Nombre del mantenedor cargado:', nombre);
+            }
+          } else {
+            console.log('⚠️ No se encontró documento del usuario en Firestore');
+          }
+        } else {
+          console.log('⚠️ No hay usuario autenticado');
+        }
+      } catch (error) {
+        console.error('❌ Error al cargar nombre del usuario:', error);
+      }
+    };
+
+    cargarNombreUsuario();
+  }, []);
 
   const getFirmaKey = (rol) => {
     if (rol === 'calidad') {
@@ -63,28 +94,8 @@ const [scrollEnabled, setScrollEnabled] = useState(true);
     return `firma_${rol}`;
   };
 
-  const getRespaldoKey = (rol) => {
-    if (rol === 'calidad') {
-      return 'firma_a_calidad_dgm_Respaldo';
-    }
-    return `firma_${rol}_Respaldo`;
-  };
-
   const getNombreKey = (rol) => {
     return `nombre_${rol}`;
-  };
-
-  const seleccionarImagen = async (rol) => {
-    const key = getRespaldoKey(rol);
-    const resultado = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-      allowsEditing: true,
-    });
-
-    if (!resultado.canceled) {
-      setRespaldos({ ...respaldos, [key]: resultado.assets[0].uri });
-    }
   };
 
   const manejarFirma = (signature, rol) => {
@@ -124,6 +135,16 @@ const [scrollEnabled, setScrollEnabled] = useState(true);
     text === 'calidad' ? 'A. Calidad DGM' : text.charAt(0).toUpperCase() + text.slice(1);
 
   const navegarAResumen = () => {
+    // Validar que la firma del mantenedor esté presente
+    if (!firmas.firma_mantenedor) {
+      Alert.alert(
+        'Firma requerida',
+        'La firma del Mantenedor es obligatoria para continuar.',
+        [{ text: 'Entendido', style: 'default' }]
+      );
+      return;
+    }
+
     console.log('📤 Navegando a InformeResumen con mantenimientoId:', mantenimientoId);
     
     navigation.navigate('InformeResumen', {
@@ -131,9 +152,8 @@ const [scrollEnabled, setScrollEnabled] = useState(true);
       respuestas,
       imagenes,
       firmas,
-      respaldos,
       nombres,
-      mantenimientoId, // ← CRÍTICO: Pasar mantenimientoId
+      mantenimientoId,
     });
   };
 
@@ -141,9 +161,9 @@ const [scrollEnabled, setScrollEnabled] = useState(true);
     <View style={estilos.contenedorPrincipal}>
       <View style={estilos.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={estilos.botonVolver}>
-          <Ionicons name="arrow-back" size={24} color="#ff9900" />
+          <Ionicons name="arrow-back" size={24} color={COLORES.primario} />
         </TouchableOpacity>
-        <Text style={estilos.titulo}>{equipo}</Text>
+        <Text style={estilos.titulo}>Firma</Text>
       </View>
 
       <ScrollView 
@@ -155,7 +175,12 @@ const [scrollEnabled, setScrollEnabled] = useState(true);
       >
         {roles.map((rol, i) => (
           <View key={i} style={estilos.bloqueFirma}>
-            <Text style={estilos.rolTexto}>{capitalizar(rol)}</Text>
+            <View style={estilos.headerRol}>
+              <Text style={estilos.rolTexto}>{capitalizar(rol)}</Text>
+              {rol === 'mantenedor' && (
+                <Text style={estilos.obligatorioTexto}>* Obligatorio</Text>
+              )}
+            </View>
 
             <TextInput
               style={estilos.inputNombre}
@@ -166,112 +191,76 @@ const [scrollEnabled, setScrollEnabled] = useState(true);
               }
             />
 
-            <View style={estilos.fila}>
-              <View style={estilos.contenedorFirma}>
-                <View style={estilos.cajaFirma}>
-                  {Platform.OS !== 'web' ? (
-                    <SignatureCanvas
-                      ref={canvasRefs[rol]}
-                      onOK={(signature) => manejarFirma(signature, rol)}
-                      onEmpty={() => console.log(`Canvas vacío: ${rol}`)}
-                      onBegin={() => setScrollEnabled(false)}
-                      onEnd={() => setScrollEnabled(true)}
-                      descriptionText="Firme aquí"
-                      clearText="Limpiar"
-                      confirmText="Guardar"
-                      webStyle={`
-                        .m-signature-pad {
-                          box-shadow: none;
-                          border: none;
-                          margin: 0;
-                        }
-                        .m-signature-pad--body {
-                          border: none;
-                          margin: 0;
-                        }
-                        .m-signature-pad--footer {
-                          display: none;
-                        }
-                        body, html {
-                          margin: 0;
-                          padding: 0;
-                          width: 100%;
-                          height: 100%;
-                        }
-                      `}
-                    />
-                  ) : (
-                    <Text style={estilos.textoWeb}>Canvas no disponible en web</Text>
-                  )}
-                </View>
-                {Platform.OS !== 'web' && (
-                  <View style={estilos.botonesCanvas}>
-                    <TouchableOpacity
-                      onPress={() => guardarFirma(rol)}
-                      style={[estilos.botonCanvas, estilos.botonGuardar]}
-                    >
-                      <Ionicons name="checkmark" size={16} color="#fff" />
-                      <Text style={estilos.textoBotonCanvas}>Guardar</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      onPress={() => limpiarFirma(rol)}
-                      style={[estilos.botonCanvas, estilos.botonLimpiar]}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#fff" />
-                      <Text style={estilos.textoBotonCanvas}>Limpiar</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {firmas[getFirmaKey(rol)] && (
-                  <View style={estilos.indicadorGuardado}>
-                    <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-                    <Text style={estilos.textoGuardado}>Firma guardada</Text>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity
-                style={estilos.cajaCarnet}
-                onPress={() => seleccionarImagen(rol)}
-              >
-                {respaldos[getRespaldoKey(rol)] ? (
-                  <Image 
-                    source={{ uri: respaldos[getRespaldoKey(rol)] }} 
-                    style={estilos.imgRespaldo} 
+            <View style={estilos.contenedorFirma}>
+              <View style={estilos.cajaFirma}>
+                {Platform.OS !== 'web' ? (
+                  <SignatureCanvas
+                    ref={canvasRefs[rol]}
+                    onOK={(signature) => manejarFirma(signature, rol)}
+                    onEmpty={() => console.log(`Canvas vacío: ${rol}`)}
+                    onBegin={() => setScrollEnabled(false)}
+                    onEnd={() => setScrollEnabled(true)}
+                    descriptionText="Firme aquí"
+                    clearText="Limpiar"
+                    confirmText="Guardar"
+                    webStyle={`
+                      .m-signature-pad {
+                        box-shadow: none;
+                        border: none;
+                        margin: 0;
+                      }
+                      .m-signature-pad--body {
+                        border: none;
+                        margin: 0;
+                      }
+                      .m-signature-pad--footer {
+                        display: none;
+                      }
+                      body, html {
+                        margin: 0;
+                        padding: 0;
+                        width: 100%;
+                        height: 100%;
+                      }
+                    `}
                   />
                 ) : (
-                  <>
-                    <Ionicons name="image-outline" size={28} color="#777" />
-                    <Text style={estilos.textoCarnet}>Subir carnet</Text>
-                  </>
+                  <Text style={estilos.textoWeb}>Canvas no disponible en web</Text>
                 )}
-              </TouchableOpacity>
+              </View>
+              {Platform.OS !== 'web' && (
+                <View style={estilos.botonesCanvas}>
+                  <TouchableOpacity
+                    onPress={() => guardarFirma(rol)}
+                    style={[estilos.botonCanvas, estilos.botonGuardar]}
+                  >
+                    <Ionicons name="checkmark" size={16} color="#fff" />
+                    <Text style={estilos.textoBotonCanvas}>Guardar</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    onPress={() => limpiarFirma(rol)}
+                    style={[estilos.botonCanvas, estilos.botonLimpiar]}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#fff" />
+                    <Text style={estilos.textoBotonCanvas}>Limpiar</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {firmas[getFirmaKey(rol)] && (
+                <View style={estilos.indicadorGuardado}>
+                  <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                  <Text style={estilos.textoGuardado}>Firma guardada</Text>
+                </View>
+              )}
             </View>
           </View>
         ))}
 
         <TouchableOpacity
           style={estilos.botonFinalizar}
-          onPress={() => {
-            const hayFirmas = Object.values(firmas).some(f => f !== null);
-            if (!hayFirmas) {
-              Alert.alert(
-                'Advertencia', 
-                '¿Desea continuar sin firmas?',
-                [
-                  { text: 'Cancelar', style: 'cancel' },
-                  { 
-                    text: 'Continuar', 
-                    onPress: navegarAResumen
-                  }
-                ]
-              );
-            } else {
-              navegarAResumen();
-            }
-          }}
+          onPress={navegarAResumen}
         >
           <Text style={estilos.textoBotonFinalizar}>Finalizar</Text>
         </TouchableOpacity>
@@ -318,11 +307,21 @@ const estilos = StyleSheet.create({
     marginBottom: 30,
     marginTop: 16,
   },
+  headerRol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   rolTexto: {
     fontSize: 18,
     fontWeight: '700',
-    marginBottom: 10,
     color: '#333',
+  },
+  obligatorioTexto: {
+    fontSize: 12,
+    color: '#ff4444',
+    fontWeight: '600',
   },
   inputNombre: {
     borderWidth: 1,
@@ -333,19 +332,13 @@ const estilos = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: '#f9f9f9',
   },
-  fila: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
   contenedorFirma: {
-    flex: 1,
-    marginRight: 12,
+    width: '100%',
   },
   cajaFirma: {
     height: 180,
     borderWidth: 2,
-    borderColor: '#ff9900',
+    borderColor: COLORES.primario,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#fff',
@@ -371,10 +364,10 @@ const estilos = StyleSheet.create({
     marginHorizontal: 4,
   },
   botonGuardar: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: COLORES.primario,
   },
   botonLimpiar: {
-    backgroundColor: '#f44336',
+    backgroundColor: '#666',
   },
   textoBotonCanvas: {
     color: '#fff',
@@ -398,30 +391,8 @@ const estilos = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 4,
   },
-  cajaCarnet: {
-    width: 110,
-    height: 110,
-    borderWidth: 2,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-    backgroundColor: '#f9f9f9',
-  },
-  imgRespaldo: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  textoCarnet: {
-    fontSize: 12,
-    color: '#777',
-    marginTop: 4,
-    textAlign: 'center',
-  },
   botonFinalizar: {
-    backgroundColor: '#ff9900',
+    backgroundColor: COLORES.primario,
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',

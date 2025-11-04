@@ -62,6 +62,25 @@ export default function Evidencia({ navigation, route }) {
     }
   };
 
+  const navegarAFirma = () => {
+    if (imagenes.length === 0) {
+      Alert.alert(
+        'Evidencia requerida',
+        'Debes subir al menos una imagen como evidencia antes de continuar.',
+        [{ text: 'Entendido', style: 'default' }]
+      );
+      return;
+    }
+
+    navigation.navigate('Firma', {
+      equipo: informe?.equipo || "Equipo no definido",
+      informe,
+      respuestas,
+      imagenes,
+      mantenimientoId,
+    });
+  };
+
   const fechaActual = new Date().toLocaleDateString('es-ES', {
     day: '2-digit',
     month: '2-digit',
@@ -101,15 +120,7 @@ export default function Evidencia({ navigation, route }) {
         <View style={estilos.botonesInferiores}>
           <TouchableOpacity
             style={estilos.botonFirmar}
-            onPress={() =>
-              navigation.navigate('Firma', {
-                equipo: informe?.equipo || "Equipo no definido",
-                informe,
-                respuestas,
-                imagenes,
-                mantenimientoId,
-              })
-            }
+            onPress={navegarAFirma}
           >
             <Text style={estilos.textoBoton}>Ir a firmar</Text>
           </TouchableOpacity>

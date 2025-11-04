@@ -5,15 +5,18 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 //Inico de sesion
 import InicioSesion from '../interfaz/InicioSesion';
 
-//Inicio mantenedor /Calendario/Formulario/Evidencia/Firma
+//Inicio mantenedor /Calendario/Formulario/Evidencia/Firma/Resumen/
 import InicioMantenedor from '../interfaz/InicioMantenedor';
 import PerfilMantenedor from '../interfaz/PerfilMantenedor';
 import CompletarFirmas from '../interfaz/CompletarFirmas';
-import CambioContrasena from '../interfaz/CambiarContrasena';
+import CambioContrasena from '../interfaz/CambioContrasena';
 
 import BuscarNombre from '../interfaz/BuscarNombre';
 import EscaneoQR from '../interfaz/EscaneoQR';
 import InformesEquipo from '../interfaz/InformesEquipo';
+import VerInformeCorrectivo from '../interfaz/Verinformecorrectivo';
+import VerInformePreventivo from '../interfaz/Verinformepreventivo';
+
 import InformeCorrectivo from '../interfaz/InformeCorrectivo'
 import ProcesosCorrectivo from '../interfaz/ProcesosCorrectivo';
 import ObservacionesCorrectivo from '../interfaz/ObservacionesCorrectivo';
@@ -25,7 +28,6 @@ import Evidencia from '../interfaz/Evidencia';
 import Firma from '../interfaz/Firma';
 import InformeResumen from '../interfaz/InformeResumen';
 
-import VerInforme from '../interfaz/VerInforme';
 //Inicio Admin /
 
 import InicioAdmin from '../interfaz/InicioAdmin';
@@ -52,7 +54,8 @@ export default function NavegacionInicio() {
         <Stack.Screen name="ObservacionesCorrectivo" component={ObservacionesCorrectivo} />
         <Stack.Screen name="EvidenciasCorrectivo" component={EvidenciasCorrectivo} />
         <Stack.Screen name="ResumenCorrectivo" component={ResumenCorrectivo} />
-        <Stack.Screen name="VerInforme" component={VerInforme} />
+        <Stack.Screen name="VerInformeCorrectivo" component={VerInformeCorrectivo} />
+        <Stack.Screen name="VerInformePreventivo" component={VerInformePreventivo} />
 
         <Stack.Screen name="Formulario" component={Formulario} />
         <Stack.Screen name="Evidencia" component={Evidencia} />
