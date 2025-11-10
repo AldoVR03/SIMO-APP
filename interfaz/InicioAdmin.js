@@ -8,22 +8,47 @@ import {
   Alert,
   Switch,
   StyleSheet,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../assets/estilos';
-import { db } from '../servicio/firebase-config';
-import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { db, auth } from '../servicio/firebase-config';
+import { collection, query, where, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
 
-export default function ListaTrabajadores({ navigation }) {
+export default function InicioAdmin({ navigation }) {
   const [vistaActual, setVistaActual] = useState('trabajadores'); // 'trabajadores' o 'equipos'
   const [trabajadores, setTrabajadores] = useState([]);
   const [equipos, setEquipos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [expandido, setExpandido] = useState(null);
+  const [nombreAdmin, setNombreAdmin] = useState('Administrador');
 
   useEffect(() => {
     cargarDatos();
+    cargarDatosAdmin();
   }, []);
+
+  const cargarDatosAdmin = async () => {
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        const docRef = doc(db, "usuarios", user.uid);
+        let docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+          const docRefAlt = doc(db, "Usuario", user.uid);
+          docSnap = await getDoc(docRefAlt);
+        }
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setNombreAdmin(data.nombre || data.Nombre || 'Administrador');
+        }
+      }
+    } catch (error) {
+      console.error('Error al cargar datos del admin:', error);
+    }
+  };
 
   const cargarDatos = async () => {
     await Promise.all([
@@ -340,10 +365,12 @@ export default function ListaTrabajadores({ navigation }) {
 
   if (cargando) {
     return (
-      <View style={styles.contenedorCentrado}>
-        <ActivityIndicator size="large" color={COLORES.primario} />
-        <Text style={{ marginTop: 10, color: '#666' }}>Cargando datos...</Text>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
+        <View style={styles.contenedorCentrado}>
+          <ActivityIndicator size="large" color={COLORES.primario} />
+          <Text style={{ marginTop: 10, color: '#666' }}>Cargando datos...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -351,100 +378,117 @@ export default function ListaTrabajadores({ navigation }) {
   const renderItemActual = vistaActual === 'trabajadores' ? renderTrabajador : renderEquipo;
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORES.fondo }}>
-      {/* Pestañas */}
-      <View style={styles.contenedorPestanas}>
-        <TouchableOpacity
-          style={[
-            styles.pestana,
-            vistaActual === 'trabajadores' && styles.pestanaActiva
-          ]}
-          onPress={() => {
-            setVistaActual('trabajadores');
-            setExpandido(null);
-          }}
-        >
-          <Ionicons 
-            name="people" 
-            size={20} 
-            color={vistaActual === 'trabajadores' ? COLORES.primario : '#666'} 
-          />
-          <Text style={[
-            styles.textoPestana,
-            vistaActual === 'trabajadores' && styles.textoPestanaActiva
-          ]}>
-            Trabajadores
-          </Text>
-        </TouchableOpacity>
+    <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
+      <View style={{ flex: 1 }}>
+        {/* Header con botón de perfil */}
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitulo}>Panel Administrativo</Text>
+            <Text style={styles.headerSubtitulo}>Bienvenido, {nombreAdmin}</Text>
+          </View>
+          
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('PerfilAdmin')}
+            style={styles.botonPerfil}
+          >
+            <Ionicons name="shield-checkmark" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
+        {/* Pestañas */}
+        <View style={styles.contenedorPestanas}>
+          <TouchableOpacity
+            style={[
+              styles.pestana,
+              vistaActual === 'trabajadores' && styles.pestanaActiva
+            ]}
+            onPress={() => {
+              setVistaActual('trabajadores');
+              setExpandido(null);
+            }}
+          >
+            <Ionicons 
+              name="people" 
+              size={20} 
+              color={vistaActual === 'trabajadores' ? COLORES.primario : '#666'} 
+            />
+            <Text style={[
+              styles.textoPestana,
+              vistaActual === 'trabajadores' && styles.textoPestanaActiva
+            ]}>
+              Trabajadores
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.pestana,
+              vistaActual === 'equipos' && styles.pestanaActiva
+            ]}
+            onPress={() => {
+              setVistaActual('equipos');
+              setExpandido(null);
+            }}
+          >
+            <Ionicons 
+              name="construct" 
+              size={20} 
+              color={vistaActual === 'equipos' ? COLORES.primario : '#666'} 
+            />
+            <Text style={[
+              styles.textoPestana,
+              vistaActual === 'equipos' && styles.textoPestanaActiva
+            ]}>
+              Equipos
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Lista */}
+        <FlatList
+          data={datosActuales}
+          renderItem={renderItemActual}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          ListEmptyComponent={
+            <View style={styles.contenedorVacio}>
+              <Ionicons 
+                name={vistaActual === 'trabajadores' ? "people-outline" : "construct-outline"} 
+                size={64} 
+                color="#ccc" 
+              />
+              <Text style={styles.textoVacio}>
+                {vistaActual === 'trabajadores' 
+                  ? 'No hay trabajadores registrados' 
+                  : 'No hay equipos registrados'
+                }
+              </Text>
+              <Text style={styles.textoVacioSecundario}>
+                Toca el botón "+" para agregar {vistaActual === 'trabajadores' ? 'un nuevo trabajador' : 'un nuevo equipo'}
+              </Text>
+            </View>
+          }
+        />
+
+        {/* Botón flotante para agregar */}
         <TouchableOpacity
-          style={[
-            styles.pestana,
-            vistaActual === 'equipos' && styles.pestanaActiva
-          ]}
+          style={styles.botonFlotante}
           onPress={() => {
-            setVistaActual('equipos');
-            setExpandido(null);
+            if (vistaActual === 'trabajadores') {
+              navigation.navigate('AgregarTrabajador', {
+                onTrabajadorAgregado: cargarTrabajadores
+              });
+            } else {
+              navigation.navigate('AgregarEquipo', {
+                onEquipoAgregado: cargarEquipos
+              });
+            }
           }}
         >
-          <Ionicons 
-            name="construct" 
-            size={20} 
-            color={vistaActual === 'equipos' ? COLORES.primario : '#666'} 
-          />
-          <Text style={[
-            styles.textoPestana,
-            vistaActual === 'equipos' && styles.textoPestanaActiva
-          ]}>
-            Equipos
-          </Text>
+          <Ionicons name="add" size={28} color="#fff" />
         </TouchableOpacity>
       </View>
-
-      {/* Lista */}
-      <FlatList
-        data={datosActuales}
-        renderItem={renderItemActual}
-        keyExtractor={item => item.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-        ListEmptyComponent={
-          <View style={styles.contenedorVacio}>
-            <Ionicons 
-              name={vistaActual === 'trabajadores' ? "people-outline" : "construct-outline"} 
-              size={64} 
-              color="#ccc" 
-            />
-            <Text style={styles.textoVacio}>
-              {vistaActual === 'trabajadores' 
-                ? 'No hay trabajadores registrados' 
-                : 'No hay equipos registrados'
-              }
-            </Text>
-            <Text style={styles.textoVacioSecundario}>
-              Toca el botón "+" para agregar {vistaActual === 'trabajadores' ? 'un nuevo trabajador' : 'un nuevo equipo'}
-            </Text>
-          </View>
-        }
-      />
-
-      {/* Botón flotante para agregar */}
-      <TouchableOpacity
-        style={styles.botonFlotante}
-        onPress={() => {
-          if (vistaActual === 'trabajadores') {
-            navigation.navigate('AgregarTrabajador', {
-              onTrabajadorAgregado: cargarTrabajadores
-            });
-          } else {
-            navigation.navigate('AgregarEquipo', {
-              onEquipoAgregado: cargarEquipos
-            });
-          }
-        }}
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -454,6 +498,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORES.fondo,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  headerTitulo: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORES.texto,
+  },
+  headerSubtitulo: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 2,
+  },
+  botonPerfil: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORES.primario,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   contenedorPestanas: {
     flexDirection: 'row',

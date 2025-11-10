@@ -31,6 +31,10 @@ import InformeResumen from '../interfaz/InformeResumen';
 //Inicio Admin /
 
 import InicioAdmin from '../interfaz/InicioAdmin';
+import PerfilAdmin from '../interfaz/PerfilAdmin';
+import CambioContrasenaAdmin from '../interfaz/CambioContrasenaAdmin';
+import AgregarTrabajador from '../interfaz/AgregarTrabajador';
+
 import { StackScreen } from 'react-native-screens';
 
 const Stack = createNativeStackNavigator();
@@ -63,6 +67,11 @@ export default function NavegacionInicio() {
         <Stack.Screen name="InformeResumen" component={InformeResumen} />
         
         <Stack.Screen name="InicioAdmin" component={InicioAdmin} />
+        <Stack.Screen name="PerfilAdmin" component={PerfilAdmin} />
+        <Stack.Screen name="CambioContrasenaAdmin" component={CambioContrasenaAdmin} />
+        <Stack.Screen name="AgregarTrabajador" component={AgregarTrabajador} />
+
+
       </Stack.Navigator>
     </NavigationContainer>
   );
