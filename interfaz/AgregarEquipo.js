@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { ref, set } from 'firebase/database';
-import { database } from '../servicio/firebase-config';
+import { doc, setDoc } from 'firebase/firestore'; // ← CAMBIO AQUÍ
+import { db } from '../servicio/firebase-config'; // ← CAMBIO AQUÍ
 import estilosComunes, { COLORES } from '../assets/estilos';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -23,7 +23,6 @@ const AgregarEquipo = ({ navigation }) => {
   const [preguntas, setPreguntas] = useState([]);
   const [nuevaPregunta, setNuevaPregunta] = useState('');
 
-  // Agregar pregunta a la lista
   const agregarPregunta = () => {
     if (nuevaPregunta.trim() === '') {
       Alert.alert('Error', 'Por favor ingrese una pregunta');
@@ -34,13 +33,11 @@ const AgregarEquipo = ({ navigation }) => {
     setNuevaPregunta('');
   };
 
-  // Eliminar pregunta de la lista
   const eliminarPregunta = (index) => {
     const nuevasPreguntas = preguntas.filter((_, i) => i !== index);
     setPreguntas(nuevasPreguntas);
   };
 
-  // Validar formulario
   const validarFormulario = () => {
     if (!equipo.trim()) {
       Alert.alert('Error', 'Por favor ingrese el nombre del equipo');
@@ -65,13 +62,12 @@ const AgregarEquipo = ({ navigation }) => {
     return true;
   };
 
-  // Guardar equipo en Firebase
+  // ← FUNCIÓN MODIFICADA PARA FIRESTORE
   const guardarEquipo = async () => {
     if (!validarFormulario()) return;
 
     try {
       const equipoData = {
-        // Datos del formulario
         equipo: equipo.trim(),
         codigo_sgs: codigoSgs.trim(),
         marca: marca.trim(),
@@ -82,8 +78,6 @@ const AgregarEquipo = ({ navigation }) => {
           pregunta: pregunta,
           respuesta: '',
         })),
-
-        // Campos que se inicializan vacíos
         fecha: '',
         mantenedor: '',
         firma_mantenedor: '',
@@ -93,14 +87,17 @@ const AgregarEquipo = ({ navigation }) => {
         firma_a_calidad_dgm: '',
       };
 
-      // Guardar en Firebase usando el codigo_sgs como clave
-      await set(ref(database, `plantilla/${codigoSgs.trim()}`), equipoData);
+      console.log('Guardando en Firestore:', codigoSgs.trim());
+
+      // Guardar en Firestore
+      await setDoc(doc(db, 'plantilla', codigoSgs.trim()), equipoData);
+
+      console.log('Guardado exitosamente');
 
       Alert.alert('Éxito', 'Equipo guardado correctamente', [
         {
           text: 'OK',
           onPress: () => {
-            // Limpiar formulario
             setEquipo('');
             setCodigoSgs('');
             setMarca('');
@@ -108,15 +105,18 @@ const AgregarEquipo = ({ navigation }) => {
             setNumeroSerie('');
             setPreguntas([]);
             setNuevaPregunta('');
-            
-            // Opcional: volver atrás
-            // navigation.goBack();
           },
         },
       ]);
     } catch (error) {
       console.error('Error al guardar:', error);
-      Alert.alert('Error', 'No se pudo guardar el equipo. Intente nuevamente.');
+      console.error('Código:', error.code);
+      console.error('Mensaje:', error.message);
+      
+      Alert.alert(
+        'Error', 
+        `No se pudo guardar el equipo.\n\nDetalle: ${error.message}`
+      );
     }
   };
 
@@ -126,7 +126,6 @@ const AgregarEquipo = ({ navigation }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {/* Header */}
         <View style={estilosComunes.encabezado}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color={COLORES.texto} />
@@ -135,10 +134,8 @@ const AgregarEquipo = ({ navigation }) => {
           <View style={{ width: 24 }} />
         </View>
 
-        {/* Título */}
         <Text style={estilosComunes.titulo}>Agregar Equipo</Text>
 
-        {/* Formulario de datos del equipo */}
         <Text style={estilosComunes.etiqueta}>Nombre del Equipo</Text>
         <TextInput
           style={estilosComunes.entrada}
@@ -180,13 +177,11 @@ const AgregarEquipo = ({ navigation }) => {
           onChangeText={setNumeroSerie}
         />
 
-        {/* Sección de preguntas */}
         <View style={{ marginTop: 20 }}>
           <Text style={[estilosComunes.etiqueta, { fontSize: 16, fontWeight: 'bold' }]}>
             Pauta de Mantenimiento
           </Text>
 
-          {/* Input para agregar pregunta */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
             <TextInput
               style={[estilosComunes.entrada, { flex: 1, marginBottom: 0, marginRight: 8 }]}
@@ -209,7 +204,6 @@ const AgregarEquipo = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          {/* Lista de preguntas agregadas */}
           {preguntas.length > 0 && (
             <View style={{ marginTop: 16 }}>
               <Text style={[estilosComunes.etiqueta, { fontWeight: 'bold' }]}>
@@ -239,7 +233,6 @@ const AgregarEquipo = ({ navigation }) => {
           )}
         </View>
 
-        {/* Botón Guardar */}
         <TouchableOpacity
           style={[estilosComunes.boton, { marginTop: 24 }]}
           onPress={guardarEquipo}
@@ -247,7 +240,6 @@ const AgregarEquipo = ({ navigation }) => {
           <Text style={estilosComunes.textoBoton}>Guardar Equipo</Text>
         </TouchableOpacity>
 
-        {/* Espacio inferior */}
         <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
