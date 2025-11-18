@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,30 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
-  StyleSheet,
   SafeAreaView,
+  StyleSheet,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORES } from '../assets/estilos';
+import estilosComunes, { COLORES } from '../assets/estilos';
 import { db, auth } from '../servicio/firebase-config';
 import { collection, query, where, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
 
 export default function InicioAdmin({ navigation }) {
-  const [vistaActual, setVistaActual] = useState('trabajadores'); // 'trabajadores' o 'equipos'
+  const [vistaActual, setVistaActual] = useState('trabajadores');
   const [trabajadores, setTrabajadores] = useState([]);
   const [equipos, setEquipos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [expandido, setExpandido] = useState(null);
   const [nombreAdmin, setNombreAdmin] = useState('Administrador');
 
-  useEffect(() => {
-    cargarDatos();
-    cargarDatosAdmin();
-  }, []);
+  // ✅ Usar useFocusEffect para recargar datos al volver a la pantalla
+  useFocusEffect(
+    React.useCallback(() => {
+      cargarDatos();
+      cargarDatosAdmin();
+    }, [])
+  );
 
   const cargarDatosAdmin = async () => {
     try {
@@ -111,7 +115,6 @@ export default function InicioAdmin({ navigation }) {
       console.log('✅ Equipos cargados:', listaEquipos.length);
     } catch (error) {
       console.error('❌ Error al cargar equipos:', error);
-      // No mostramos alerta aquí para no interrumpir la carga de trabajadores
     }
   };
 
@@ -175,11 +178,10 @@ export default function InicioAdmin({ navigation }) {
 
   const renderTrabajador = ({ item }) => {
     const estaExpandido = expandido === item.id;
-    const habilitado = item.habilitado !== false; // Por defecto habilitado
+    const habilitado = item.habilitado !== false;
 
     return (
       <View style={styles.card}>
-        {/* Header del card (siempre visible) */}
         <TouchableOpacity
           style={styles.cardHeader}
           onPress={() => toggleExpandir(item.id)}
@@ -210,12 +212,10 @@ export default function InicioAdmin({ navigation }) {
           />
         </TouchableOpacity>
 
-        {/* Contenido expandido */}
         {estaExpandido && (
           <View style={styles.cardBody}>
             <View style={styles.separador} />
             
-            {/* Correo */}
             <View style={styles.infoFila}>
               <Ionicons name="mail-outline" size={18} color="#666" />
               <Text style={styles.infoTexto}>
@@ -223,7 +223,6 @@ export default function InicioAdmin({ navigation }) {
               </Text>
             </View>
 
-            {/* Estado */}
             <View style={styles.estadoContainer}>
               <View style={styles.estadoFila}>
                 <View style={styles.estadoInfo}>
@@ -267,11 +266,10 @@ export default function InicioAdmin({ navigation }) {
 
   const renderEquipo = ({ item }) => {
     const estaExpandido = expandido === item.id;
-    const disponible = item.disponible !== false; // Por defecto disponible
+    const disponible = item.disponible !== false;
 
     return (
       <View style={styles.card}>
-        {/* Header del card (siempre visible) */}
         <TouchableOpacity
           style={styles.cardHeader}
           onPress={() => toggleExpandir(item.id)}
@@ -302,12 +300,10 @@ export default function InicioAdmin({ navigation }) {
           />
         </TouchableOpacity>
 
-        {/* Contenido expandido */}
         {estaExpandido && (
           <View style={styles.cardBody}>
             <View style={styles.separador} />
             
-            {/* Tipo de equipo */}
             {item.tipo && (
               <View style={styles.infoFila}>
                 <Ionicons name="pricetag-outline" size={18} color="#666" />
@@ -315,7 +311,6 @@ export default function InicioAdmin({ navigation }) {
               </View>
             )}
 
-            {/* Marca/Modelo */}
             {(item.marca || item.modelo) && (
               <View style={styles.infoFila}>
                 <Ionicons name="information-circle-outline" size={18} color="#666" />
@@ -325,7 +320,6 @@ export default function InicioAdmin({ navigation }) {
               </View>
             )}
 
-            {/* Estado */}
             <View style={styles.estadoContainer}>
               <View style={styles.estadoFila}>
                 <View style={styles.estadoInfo}>
@@ -365,7 +359,7 @@ export default function InicioAdmin({ navigation }) {
 
   if (cargando) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
+      <SafeAreaView style={estilosComunes.contenedor}>
         <View style={styles.contenedorCentrado}>
           <ActivityIndicator size="large" color={COLORES.primario} />
           <Text style={{ marginTop: 10, color: '#666' }}>Cargando datos...</Text>
@@ -378,9 +372,9 @@ export default function InicioAdmin({ navigation }) {
   const renderItemActual = vistaActual === 'trabajadores' ? renderTrabajador : renderEquipo;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
+    <SafeAreaView style={estilosComunes.contenedor}>
       <View style={{ flex: 1 }}>
-        {/* Header con botón de perfil */}
+        {/* Header */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitulo}>Panel Administrativo</Text>
@@ -470,18 +464,14 @@ export default function InicioAdmin({ navigation }) {
           }
         />
 
-        {/* Botón flotante para agregar */}
+        {/* ✅ Botón flotante SIN callbacks */}
         <TouchableOpacity
           style={styles.botonFlotante}
           onPress={() => {
             if (vistaActual === 'trabajadores') {
-              navigation.navigate('AgregarTrabajador', {
-                onTrabajadorAgregado: cargarTrabajadores
-              });
+              navigation.navigate('AgregarTrabajador');
             } else {
-              navigation.navigate('AgregarEquipo', {
-                onEquipoAgregado: cargarEquipos
-              });
+              navigation.navigate('AgregarEquipo');
             }
           }}
         >
@@ -492,12 +482,12 @@ export default function InicioAdmin({ navigation }) {
   );
 }
 
+// ✅ Estilos locales mínimos (lo que no está en estilosComunes)
 const styles = StyleSheet.create({
   contenedorCentrado: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORES.fondo,
   },
   header: {
     flexDirection: 'row',
@@ -532,21 +522,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
   },
   contenedorPestanas: {
     flexDirection: 'row',
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
   pestana: {
     flex: 1,

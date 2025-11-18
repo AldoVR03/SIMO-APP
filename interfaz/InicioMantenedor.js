@@ -1,15 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, TouchableOpacity,
-    ScrollView, ActivityIndicator, SafeAreaView
+    ScrollView, ActivityIndicator, SafeAreaView, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { format, addDays, subDays, startOfWeek, isToday, isBefore, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { collection, query, getDocs, doc, where } from "firebase/firestore";
+import { collection, query, getDocs, doc, getDoc } from "firebase/firestore"; // ✅ Añadir getDoc
 import { db } from "../servicio/firebase-config";
 import estilos, { COLORES } from '../assets/estilos';
 import { useFocusEffect } from '@react-navigation/native';
+import { useConexionInternet } from '../servicio/network-service';
+import {
+    sincronizarMantenimientosOffline,
+    hayDatosPendientesSincronizar,
+} from '../servicio/sync-service';
+import {
+    guardarPlantillas,
+    obtenerPlantillas,
+} from '../servicio/offline-storage';
+import IndicadorConexion from '../assets/IndicadorConexion';
 
 export default function InicioMantenedor({ navigation }) {
     const [diaBase, setDiaBase] = useState(new Date());
@@ -18,9 +28,13 @@ export default function InicioMantenedor({ navigation }) {
     const [mostrarRealizados, setMostrarRealizados] = useState(true);
     const [informes, setInformes] = useState([]);
     const [cargando, setCargando] = useState(false);
+    const [sincronizando, setSincronizando] = useState(false);
+    const [datosPendientes, setDatosPendientes] = useState(0);
 
     const [cacheDatos, setCacheDatos] = useState(null);
     const [ultimaCarga, setUltimaCarga] = useState(null);
+    
+    const { estaConectado } = useConexionInternet();
     
     const lunes = startOfWeek(diaBase, { weekStartsOn: 1 });
 
@@ -33,6 +47,52 @@ export default function InicioMantenedor({ navigation }) {
             esSeleccionado: format(dia, 'yyyy-MM-dd') === format(diaSeleccionado, 'yyyy-MM-dd'),
         };
     });
+
+    // ✅ Descargar plantillas solo de los equipos del día
+    const descargarPlantillasDelDia = useCallback(async (informesDelDia) => {
+        if (!estaConectado || informesDelDia.length === 0) return;
+
+        try {
+            console.log(`📥 Descargando plantillas de ${informesDelDia.length} equipos...`);
+            
+            const plantillasExistentes = await obtenerPlantillas();
+            const plantillasNuevas = { ...plantillasExistentes };
+            let descargadas = 0;
+
+            for (const informe of informesDelDia) {
+                const codigoSgs = informe.codigo_sgs || informe.id;
+                
+                // Si ya existe, no descargar de nuevo
+                if (plantillasNuevas[codigoSgs]) {
+                    console.log(`⏭️ Plantilla ${codigoSgs} ya existe`);
+                    continue;
+                }
+
+                try {
+                    // ✅ Usar Firestore correctamente
+                    const plantillaRef = doc(db, 'plantilla', codigoSgs);
+                    const snapshot = await getDoc(plantillaRef);
+
+                    if (snapshot.exists()) {
+                        plantillasNuevas[codigoSgs] = snapshot.data();
+                        descargadas++;
+                        console.log(`✅ Plantilla descargada: ${codigoSgs}`);
+                    } else {
+                        console.warn(`⚠️ Plantilla no encontrada: ${codigoSgs}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Error descargando plantilla ${codigoSgs}:`, error);
+                }
+            }
+
+            if (descargadas > 0) {
+                await guardarPlantillas(plantillasNuevas);
+                console.log(`✅ ${descargadas} plantillas nuevas guardadas offline`);
+            }
+        } catch (error) {
+            console.error('❌ Error descargando plantillas del día:', error);
+        }
+    }, [estaConectado]);
 
     const cargarTodosDatos = useCallback(async () => {
         try {
@@ -133,17 +193,57 @@ export default function InicioMantenedor({ navigation }) {
             
             const informesFiltrados = filtrarInformes(nuevosDatos, diaSeleccionado, mostrarRealizados);
             setInformes(informesFiltrados);
+
+            // ✅ Descargar plantillas de los equipos del día
+            if (estaConectado && informesFiltrados.length > 0) {
+                await descargarPlantillasDelDia(informesFiltrados);
+            }
             
         } catch (error) {
             console.error("❌ Error al cargar informes:", error);
         } finally {
             setCargando(false);
         }
-    }, [diaSeleccionado, mostrarRealizados, cacheDatos, ultimaCarga, cargarTodosDatos, filtrarInformes]);
+    }, [diaSeleccionado, mostrarRealizados, cacheDatos, ultimaCarga, estaConectado, cargarTodosDatos, filtrarInformes, descargarPlantillasDelDia]);
+
+    // ✅ Sincronizar cuando vuelva internet
+    const sincronizarDatos = useCallback(async () => {
+        if (!estaConectado) return;
+
+        try {
+            setSincronizando(true);
+            const resultado = await sincronizarMantenimientosOffline();
+            
+            if (resultado.success && resultado.sincronizados > 0) {
+                Alert.alert(
+                    'Sincronización exitosa',
+                    `Se sincronizaron ${resultado.sincronizados} mantenimiento(s).`
+                );
+                await cargarInformes(true);
+            }
+        } catch (error) {
+            console.error('❌ Error en sincronización:', error);
+        } finally {
+            setSincronizando(false);
+        }
+    }, [estaConectado, cargarInformes]);
+
+    const verificarDatosPendientes = useCallback(async () => {
+        const pendientes = await hayDatosPendientesSincronizar();
+        setDatosPendientes(pendientes ? 1 : 0);
+    }, []);
+
+    useEffect(() => {
+        if (estaConectado) {
+            verificarDatosPendientes();
+            sincronizarDatos();
+        }
+    }, [estaConectado]);
 
     useFocusEffect(
         useCallback(() => {
             console.log('🔄 Pantalla enfocada');
+            verificarDatosPendientes();
             cargarInformes(true); 
         }, [])
     );
@@ -196,9 +296,21 @@ export default function InicioMantenedor({ navigation }) {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
+            <IndicadorConexion 
+                estaConectado={estaConectado} 
+                datosPendientes={datosPendientes}
+            />
+
             <View style={estilos.contenedor}>
                 <View style={estilos.encabezado}>
-                    <Text style={estilos.logoTexto}>SGS</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={estilos.logoTexto}>SGS</Text>
+                        <Ionicons 
+                            name={estaConectado ? "cloud-done" : "cloud-offline"} 
+                            size={20} 
+                            color={estaConectado ? "#2ecc71" : "#e74c3c"} 
+                        />
+                    </View>
                     <TouchableOpacity onPress={() => navigation.navigate('PerfilMantenedor')}>
                         <Ionicons name="person-circle-outline" size={30} color={COLORES.primario} />
                     </TouchableOpacity>
@@ -269,11 +381,11 @@ export default function InicioMantenedor({ navigation }) {
                     </TouchableOpacity>
                 </View>
 
-                {cacheDatos && (
+                {sincronizando && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }}>
-                        <Ionicons name="flash" size={12} color="#2ecc71" />
-                        <Text style={{ fontSize: 10, color: '#2ecc71', marginLeft: 4 }}>
-                          
+                        <ActivityIndicator size="small" color={COLORES.primario} />
+                        <Text style={{ fontSize: 12, color: COLORES.primario, marginLeft: 8 }}>
+                            Sincronizando...
                         </Text>
                     </View>
                 )}

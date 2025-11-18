@@ -34,6 +34,7 @@ import InicioAdmin from '../interfaz/InicioAdmin';
 import PerfilAdmin from '../interfaz/PerfilAdmin';
 import CambioContrasenaAdmin from '../interfaz/CambioContrasenaAdmin';
 import AgregarTrabajador from '../interfaz/AgregarTrabajador';
+import AgregarEquipo from '../interfaz/AgregarEquipo';
 
 import { StackScreen } from 'react-native-screens';
 
@@ -70,7 +71,7 @@ export default function NavegacionInicio() {
         <Stack.Screen name="PerfilAdmin" component={PerfilAdmin} />
         <Stack.Screen name="CambioContrasenaAdmin" component={CambioContrasenaAdmin} />
         <Stack.Screen name="AgregarTrabajador" component={AgregarTrabajador} />
-
+        <Stack.Screen name="AgregarEquipo" component={AgregarEquipo} />
 
       </Stack.Navigator>
     </NavigationContainer>
