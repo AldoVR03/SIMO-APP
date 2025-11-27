@@ -16,17 +16,18 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../servicio/firebase-config';
 import { format } from 'date-fns';
 import { COLORES } from '../assets/estilos';
+import { obtenerMantenimientosOffline, actualizarMantenimientoOffline } from '../servicio/offline-storage';
 
 const SignatureCanvas =
   Platform.OS !== 'web' ? require('react-native-signature-canvas').default : () => null;
 
 export default function CompletarFirmas({ navigation, route }) {
   const { informe, mantenimientoId } = route.params;
-  
+
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [datosInforme, setDatosInforme] = useState(null);
-  
+
   const [firmas, setFirmas] = useState({
     firma_mantenedor: null,
     firma_supervisor: null,
@@ -59,11 +60,11 @@ export default function CompletarFirmas({ navigation, route }) {
         const uid = usuarioActual.uid;
         const docRef = doc(db, 'usuarios', uid);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           const datosUsuario = docSnap.data();
           const nombreCompleto = datosUsuario.nombre || datosUsuario.displayName || '';
-          
+
           if (nombreCompleto) {
             setNombres(prev => ({
               ...prev,
@@ -82,7 +83,7 @@ export default function CompletarFirmas({ navigation, route }) {
       setCargando(true);
       const mantenimientoRef = doc(db, 'planificacion', informe.id, 'mantenimientos', mantenimientoId);
       const mantenimientoSnap = await getDoc(mantenimientoRef);
-      
+
       if (mantenimientoSnap.exists()) {
         const data = mantenimientoSnap.data();
         setDatosInforme(data);
@@ -90,7 +91,7 @@ export default function CompletarFirmas({ navigation, route }) {
         if (data.informeId) {
           const informeRef = doc(db, 'informePreventivo', data.informeId);
           const informeSnap = await getDoc(informeRef);
-          
+
           if (informeSnap.exists()) {
             const informeData = informeSnap.data();
             setFirmas(informeData.firmas || {});
@@ -175,7 +176,36 @@ export default function CompletarFirmas({ navigation, route }) {
     try {
       setGuardando(true);
 
-      // Subir nuevas firmas
+      // Verificar si existe en offline storage
+      const mantenimientosOffline = await obtenerMantenimientosOffline();
+      const enOffline = mantenimientosOffline.find(m => m.mantenimientoId === mantenimientoId);
+
+      if (enOffline) {
+        console.log("📴 Actualizando registro en almacenamiento offline...");
+
+        const firmasRequeridas = ['firma_mantenedor', 'firma_supervisor', 'firma_a_calidad_dgm'];
+        const faltanFirmas = firmasRequeridas.some(key => !firmas[key]);
+        const nuevoEstado = faltanFirmas ? "Faltante de firmas" : "Completado";
+
+        const mantenimientoActualizado = {
+          ...enOffline,
+          firmas: firmas,
+          nombres: nombres,
+          estado: nuevoEstado,
+          fechaCompletado: nuevoEstado === "Completado" ? format(new Date(), 'yyyy-MM-dd') : enOffline.fechaCompletado
+        };
+
+        await actualizarMantenimientoOffline(mantenimientoActualizado);
+
+        Alert.alert(
+          'Guardado Offline',
+          `Firmas guardadas localmente.\nEstado: ${nuevoEstado}\nSe sincronizará cuando tengas conexión.`,
+          [{ text: 'OK', onPress: () => navigation.navigate('InicioMantenedor') }]
+        );
+        return;
+      }
+
+      // Flujo Online Normal
       const urlsFirmas = { ...firmas };
       for (const [key, dataUri] of Object.entries(firmas)) {
         if (dataUri && dataUri.startsWith('data:image')) {
@@ -248,8 +278,8 @@ export default function CompletarFirmas({ navigation, route }) {
         <Text style={estilos.titulo}>Completar Firmas</Text>
       </View>
 
-      <ScrollView 
-        style={estilos.scrollContenido} 
+      <ScrollView
+        style={estilos.scrollContenido}
         contentContainerStyle={estilos.contenedorContenido}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -280,7 +310,7 @@ export default function CompletarFirmas({ navigation, route }) {
                 style={[estilos.inputNombre, yaFirmado && estilos.inputDeshabilitado]}
                 placeholder={`Nombre completo del ${capitalizar(rol)}`}
                 value={nombres[getNombreKey(rol)]}
-                onChangeText={(texto) => 
+                onChangeText={(texto) =>
                   setNombres({ ...nombres, [getNombreKey(rol)]: texto })
                 }
                 editable={!yaFirmado}
@@ -289,8 +319,8 @@ export default function CompletarFirmas({ navigation, route }) {
               <View style={estilos.contenedorFirma}>
                 <View style={[estilos.cajaFirma, yaFirmado && estilos.cajaFirmaDeshabilitada]}>
                   {yaFirmado ? (
-                    <Image 
-                      source={{ uri: firmas[firmaKey] }} 
+                    <Image
+                      source={{ uri: firmas[firmaKey] }}
                       style={estilos.firmaExistente}
                       resizeMode="contain"
                     />
@@ -329,7 +359,7 @@ export default function CompletarFirmas({ navigation, route }) {
                     <Text style={estilos.textoWeb}>Canvas no disponible en web</Text>
                   )}
                 </View>
-                
+
                 {!yaFirmado && Platform.OS !== 'web' && (
                   <View style={estilos.botonesCanvas}>
                     <TouchableOpacity
@@ -339,7 +369,7 @@ export default function CompletarFirmas({ navigation, route }) {
                       <Ionicons name="checkmark" size={16} color="#fff" />
                       <Text style={estilos.textoBotonCanvas}>Guardar</Text>
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity
                       onPress={() => limpiarFirma(rol)}
                       style={[estilos.botonCanvas, estilos.botonLimpiar]}
@@ -532,6 +562,7 @@ const estilos = StyleSheet.create({
     backgroundColor: '#E8F5E9',
     borderRadius: 4,
     alignSelf: 'flex-start',
+    marginTop: 8,
   },
   textoGuardado: {
     color: '#4CAF50',

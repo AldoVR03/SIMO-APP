@@ -10,7 +10,9 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORES } from '../assets/estilos';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db } from '../servicio/firebase-config'; // Asegúrate que esta ruta sea correcta
+import { COLORES } from '../assets/estilos'; // Asegúrate que esta ruta sea correcta
 
 export default function EscanerQR({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -18,7 +20,6 @@ export default function EscanerQR({ navigation }) {
   const [procesando, setProcesando] = useState(false);
 
   useEffect(() => {
-    // Solicitar permisos al montar el componente
     (async () => {
       if (!permission?.granted) {
         await requestPermission();
@@ -26,40 +27,146 @@ export default function EscanerQR({ navigation }) {
     })();
   }, []);
 
-  const manejarEscaneo = ({ data }) => {
+  // --- FUNCIÓN DE BÚSQUEDA MEJORADA ---
+const buscarEquipoPorID = async (idEquipoRaw) => {
+    try {
+      console.log(`🔍 Buscando: [${idEquipoRaw}]`);
+      
+      // 1. DEFINICIÓN EXACTA DE COLECCIONES (Minúsculas según tus fotos)
+      // La colección se llama 'equipos' (plural) y 'plantilla' (singular)
+      const colecciones = ['equipos', 'plantilla']; 
+
+      for (const nombreColeccion of colecciones) {
+        
+        // A. Búsqueda directa por ID del Documento (Lo más probable)
+        // (Ej: El documento se llama "LAB-DGM-HOR-006")
+        try {
+            const docRef = doc(db, nombreColeccion, idEquipoRaw);
+            const docSnap = await getDoc(docRef);
+            
+            if (docSnap.exists()) {
+                console.log(`✅ Encontrado por ID Documento en '${nombreColeccion}'`);
+                return { id: docSnap.id, ...docSnap.data() };
+            }
+        } catch (e) {
+            console.log(`Pasando búsqueda doc ID en ${nombreColeccion}`);
+        }
+
+        // B. Búsqueda por campos internos (Query)
+        const refColeccion = collection(db, nombreColeccion);
+        
+        // En tus fotos: 'plantilla' usa 'codigo_sgs', pero 'equipos' usa 'id'
+        // Vamos a buscar en ambos campos por si acaso.
+        
+        // Intento 1: Buscar por campo 'codigo_sgs' (Común en plantilla)
+        const q1 = query(refColeccion, where('codigo_sgs', '==', idEquipoRaw));
+        const snap1 = await getDocs(q1);
+        if (!snap1.empty) {
+             console.log(`✅ Encontrado por codigo_sgs en '${nombreColeccion}'`);
+             return { id: snap1.docs[0].id, ...snap1.docs[0].data() };
+        }
+
+        // Intento 2: Buscar por campo 'id' (Común en equipos según tu foto 2)
+        const q2 = query(refColeccion, where('id', '==', idEquipoRaw));
+        const snap2 = await getDocs(q2);
+        if (!snap2.empty) {
+             console.log(`✅ Encontrado por campo 'id' en '${nombreColeccion}'`);
+             return { id: snap2.docs[0].id, ...snap2.docs[0].data() };
+        }
+      }
+
+      console.log('❌ No se encontró el equipo en equipos ni plantilla.');
+      return null;
+
+    } catch (error) {
+      console.error('❌ Error buscando equipo:', error);
+      throw error;
+    }
+  };
+
+  const manejarEscaneo = async ({ data }) => {
     if (escaneado || procesando) return;
 
     setEscaneado(true);
     setProcesando(true);
 
     try {
-      console.log('📱 QR escaneado:', data);
+      console.log('📱 Data Cruda del QR:', JSON.stringify(data));
 
-      // Aquí puedes parsear el QR según tu formato
-      // Ejemplo: Si el QR contiene un ID de equipo
-      const equipoId = data;
+      let idEquipo = data;
 
-      // Navegar a InformesEquipo con los datos del QR
-      navigation.navigate('InformesEquipo', {
-        equipoId: equipoId,
-        qrData: data,
-      });
+      // 1. Limpieza de URL
+      if (idEquipo.includes('http://') || idEquipo.includes('https://')) {
+        const urlParts = idEquipo.split('/');
+        const partesValidas = urlParts.filter(p => p.length > 0);
+        idEquipo = partesValidas[partesValidas.length - 1];
+      }
 
-      // Reset después de navegar
-      setTimeout(() => {
-        setEscaneado(false);
-        setProcesando(false);
-      }, 1000);
+      // 2. Limpieza formato "Etiqueta: VALOR"
+      if (idEquipo.includes(':')) {
+        idEquipo = idEquipo.split(':').pop();
+      }
+
+      // 3. LIMPIEZA CRÍTICA: Quitar espacios y saltos de línea invisibles
+      idEquipo = idEquipo.trim().replace(/(\r\n|\n|\r)/gm, "");
+
+      console.log(`📱 ID Limpio a buscar: [${idEquipo}]`);
+
+      // Buscar en Firebase
+      const equipo = await buscarEquipoPorID(idEquipo);
+
+      if (equipo) {
+        console.log('✅ Navegando a InformesEquipo');
+        navigation.navigate('InformesEquipo', {
+          equipoId: equipo.id,
+          equipoNombre: equipo.equipo || equipo.nombre || idEquipo,
+          equipo: equipo,
+        });
+
+        // Pequeño delay para permitir que la navegación ocurra antes de resetear
+        setTimeout(() => {
+          setEscaneado(false);
+          setProcesando(false);
+        }, 1500);
+
+      } else {
+        Alert.alert(
+          'Equipo no encontrado',
+          `No se encontró coincidencias para:\n"${idEquipo}"\n\nVerifica que el código coincida con 'codigo_sgs' o el ID en Firebase.`,
+          [
+            {
+              text: 'Reintentar',
+              onPress: () => {
+                setEscaneado(false);
+                setProcesando(false);
+              },
+            },
+            {
+              text: 'Volver',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      }
 
     } catch (error) {
-      console.error('Error procesando QR:', error);
-      Alert.alert('Error', 'Código QR inválido');
-      setEscaneado(false);
-      setProcesando(false);
+      console.error('❌ Error procesando QR:', error);
+      Alert.alert(
+        'Error',
+        'Hubo un problema al procesar el código: ' + error.message,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setEscaneado(false);
+              setProcesando(false);
+            },
+          },
+        ]
+      );
     }
   };
 
-  // Si no hay permisos aún
   if (!permission) {
     return (
       <View style={estilos.contenedor}>
@@ -69,7 +176,6 @@ export default function EscanerQR({ navigation }) {
     );
   }
 
-  // Si los permisos fueron denegados
   if (!permission.granted) {
     return (
       <View style={estilos.contenedor}>
@@ -94,7 +200,6 @@ export default function EscanerQR({ navigation }) {
   return (
     <View style={estilos.contenedor}>
       <SafeAreaView style={estilos.contenedor}>
-        {/* Header */}
         <View style={estilos.header}>
           <TouchableOpacity 
             onPress={() => navigation.goBack()} 
@@ -106,7 +211,6 @@ export default function EscanerQR({ navigation }) {
           <View style={estilos.espaciador} />
         </View>
 
-        {/* Cámara */}
         <View style={estilos.camaraContainer}>
           <CameraView
             style={estilos.camara}
@@ -116,7 +220,6 @@ export default function EscanerQR({ navigation }) {
               barcodeTypes: ['qr'],
             }}
           >
-            {/* Overlay con marco */}
             <View style={estilos.overlay}>
               <View style={estilos.marcoQR}>
                 <View style={[estilos.esquina, estilos.esquinaSuperiorIzq]} />
@@ -126,14 +229,12 @@ export default function EscanerQR({ navigation }) {
               </View>
             </View>
 
-            {/* Texto de instrucción */}
             <View style={estilos.instruccionContainer}>
               <Text style={estilos.textoInstruccion}>
-                {procesando ? 'Procesando...' : 'Apunta al código QR del equipo'}
+                {procesando ? 'Buscando equipo en base de datos...' : 'Escanea el QR del equipo'}
               </Text>
             </View>
 
-            {/* Indicador de procesamiento */}
             {procesando && (
               <View style={estilos.procesandoContainer}>
                 <ActivityIndicator size="large" color="#fff" />
@@ -142,31 +243,13 @@ export default function EscanerQR({ navigation }) {
           </CameraView>
         </View>
 
-        {/* Botón manual (opcional) */}
         <View style={estilos.botonesInferiores}>
           <TouchableOpacity
             style={estilos.botonManual}
-            onPress={() => {
-              Alert.alert(
-                'Entrada manual',
-                'Ingrese el ID del equipo',
-                [
-                  { text: 'Cancelar', style: 'cancel' },
-                  {
-                    text: 'OK',
-                    onPress: () => {
-                      // Aquí puedes implementar entrada manual si lo necesitas
-                      navigation.navigate('InformesEquipo', {
-                        equipoId: 'MANUAL',
-                      });
-                    },
-                  },
-                ]
-              );
-            }}
+            onPress={() => navigation.goBack()}
           >
-            <Ionicons name="create-outline" size={20} color="#fff" />
-            <Text style={estilos.textoBotonManual}>Entrada Manual</Text>
+            <Ionicons name="list-outline" size={20} color="#fff" />
+            <Text style={estilos.textoBotonManual}>Ver Lista de Equipos</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

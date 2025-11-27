@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { doc, setDoc } from 'firebase/firestore'; // ← CAMBIO AQUÍ
-import { db } from '../servicio/firebase-config'; // ← CAMBIO AQUÍ
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../servicio/firebase-config';
 import estilosComunes, { COLORES } from '../assets/estilos';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -62,17 +62,27 @@ const AgregarEquipo = ({ navigation }) => {
     return true;
   };
 
-  // ← FUNCIÓN MODIFICADA PARA FIRESTORE
   const guardarEquipo = async () => {
     if (!validarFormulario()) return;
 
     try {
+      const codigoId = codigoSgs.trim();
+
+      // Datos para la colección "equipos"
       const equipoData = {
-        equipo: equipo.trim(),
-        codigo_sgs: codigoSgs.trim(),
+        nombre: equipo.trim(),
+        codigo: codigoId,
+        codigo_sgs: codigoId,
         marca: marca.trim(),
         modelo: modelo.trim(),
         numero_serie: numeroSerie.trim(),
+        disponible: true,
+      };
+
+      // Datos para la colección "plantilla"
+      const plantillaData = {
+        codigo_sgs: codigoId,
+        nombre_equipo: equipo.trim(),
         pauta_mantenimiento: preguntas.map((pregunta, index) => ({
           id: index + 1,
           pregunta: pregunta,
@@ -87,16 +97,17 @@ const AgregarEquipo = ({ navigation }) => {
         firma_a_calidad_dgm: '',
       };
 
-      console.log('Guardando en Firestore:', codigoSgs.trim());
+      console.log('Guardando equipo en Firestore:', codigoId);
 
-      // Guardar en Firestore
-      await setDoc(doc(db, 'plantilla', codigoSgs.trim()), equipoData);
+      // Guardar en ambas colecciones
+      await setDoc(doc(db, 'equipos', codigoId), equipoData);
+      await setDoc(doc(db, 'plantilla', codigoId), plantillaData);
 
-      console.log('Guardado exitosamente');
+      console.log('Guardado exitosamente en ambas colecciones');
 
       Alert.alert('Éxito', 'Equipo guardado correctamente', [
         {
-          text: 'OK',
+          text: 'Agregar Otro',
           onPress: () => {
             setEquipo('');
             setCodigoSgs('');
@@ -107,14 +118,19 @@ const AgregarEquipo = ({ navigation }) => {
             setNuevaPregunta('');
           },
         },
+        {
+          text: 'Volver',
+          onPress: () => navigation.goBack(),
+          style: 'cancel',
+        },
       ]);
     } catch (error) {
       console.error('Error al guardar:', error);
       console.error('Código:', error.code);
       console.error('Mensaje:', error.message);
-      
+
       Alert.alert(
-        'Error', 
+        'Error',
         `No se pudo guardar el equipo.\n\nDetalle: ${error.message}`
       );
     }

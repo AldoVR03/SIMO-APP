@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { initializeAuth, getReactNativePersistence } from "firebase/auth";
-import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
+import { initializeAuth, getReactNativePersistence, getAuth } from "firebase/auth";
+import { getFunctions } from "firebase/functions";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const firebaseConfig = {
@@ -13,17 +13,23 @@ const firebaseConfig = {
   appId: "1:480543647299:web:326d5ca6a3b4cbb04716f6",
 };
 
+// App principal (con persistencia para el admin/usuarios normales)
 const app = initializeApp(firebaseConfig);
 
+// Segunda app solo para crear usuarios (sin persistencia)
+// Nota: Esto permite crear usuarios sin desconectar al usuario actual
+const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+
 export const db = getFirestore(app);
+
+// Auth principal con persistencia
 export const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage),
 });
 
-// Configurar la región correcta (us-central1 es la predeterminada)
-export const functions = getFunctions(app, 'us-central1');
+// Auth secundario SIN persistencia (para crear usuarios sin cerrar sesión)
+export const secondaryAuth = getAuth(secondaryApp);
 
-// Solo para desarrollo local (comenta o elimina en producción)
-// connectFunctionsEmulator(functions, "localhost", 5001);
+export const functions = getFunctions(app, 'us-central1');
 
 export default app;

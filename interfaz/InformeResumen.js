@@ -14,6 +14,8 @@ import { auth, db } from "../servicio/firebase-config";
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore";
 import { format } from 'date-fns';
 import uploadImage from "../servicio/cloudinary-config";
+import { verificarConexionInternet } from "../servicio/network-service";
+import { guardarMantenimientoOffline } from "../servicio/offline-storage";
 
 export default function InformeResumen({ route, navigation }) {
   const [guardando, setGuardando] = useState(false);
@@ -24,7 +26,7 @@ export default function InformeResumen({ route, navigation }) {
     imagenes = [],
     firmas = {},
     respaldos = {},
-    nombres = {}, 
+    nombres = {},
     mantenimientoId = null, // ID del documento de mantenimiento
   } = route?.params || {};
 
@@ -53,6 +55,49 @@ export default function InformeResumen({ route, navigation }) {
   const guardarInforme = async () => {
     setGuardando(true);
     try {
+      const conectado = await verificarConexionInternet();
+
+      if (!conectado) {
+        console.log('📴 Modo offline: Guardando localmente...');
+
+        // Verificar si faltan firmas
+        const firmasRequeridas = ['firma_mantenedor', 'firma_supervisor', 'firma_a_calidad_dgm'];
+        const faltanFirmas = firmasRequeridas.some(key => !firmas[key]);
+
+        // Determinar el estado basado en las firmas
+        const estadoOffline = faltanFirmas ? "Faltante de firmas" : "Pendiente de sincronización";
+
+        const informeOffline = {
+          mantenimientoId,
+          informe,
+          respuestas,
+          imagenes, // URIs locales
+          firmas,   // Data URIs
+          respaldos,
+          nombres,
+          usuario: auth.currentUser ? auth.currentUser.email : "Anon",
+          fecha_creacion: new Date().toISOString(),
+          estado: estadoOffline
+        };
+
+        const guardado = await guardarMantenimientoOffline(informeOffline);
+
+        if (guardado) {
+          const mensaje = faltanFirmas
+            ? "El informe se ha guardado en el dispositivo con firmas faltantes. Se subirá automáticamente cuando recuperes la conexión y podrás completar las firmas pendientes."
+            : "El informe se ha guardado en el dispositivo. Se subirá automáticamente cuando recuperes la conexión.";
+
+          Alert.alert(
+            "Guardado Offline",
+            mensaje,
+            [{ text: "Entendido", onPress: () => navigation.navigate("InicioMantenedor") }]
+          );
+        } else {
+          Alert.alert("Error", "No se pudo guardar el informe offline.");
+        }
+        return;
+      }
+
       // Subir imágenes de evidencia
       const urlsImagenes = [];
       for (const uri of imagenes) {
@@ -61,7 +106,7 @@ export default function InformeResumen({ route, navigation }) {
           urlsImagenes.push(urlCloudinary);
         } catch (error) {
           console.error('Error subiendo imagen:', error);
-          urlsImagenes.push(uri); 
+          urlsImagenes.push(uri);
         }
       }
 
@@ -90,7 +135,7 @@ export default function InformeResumen({ route, navigation }) {
             urlsRespaldos[key] = urlCloudinary;
           } catch (error) {
             console.error(`Error subiendo respaldo ${key}:`, error);
-            urlsRespaldos[key] = uri; 
+            urlsRespaldos[key] = uri;
           }
         }
       }
@@ -98,35 +143,35 @@ export default function InformeResumen({ route, navigation }) {
       // Verificar si faltan firmas
       const firmasRequeridas = ['firma_mantenedor', 'firma_supervisor', 'firma_a_calidad_dgm'];
       const faltanFirmas = firmasRequeridas.some(key => !urlsFirmas[key]);
-      
+
       // Determinar el nuevo estado
       const nuevoEstado = faltanFirmas ? "Faltante de firmas" : "Completado";
 
-      // Guardar el informe en la colección informePreventivo
+      // Guardar el informe en la colección informePreventivo con ESTRUCTURA ESTRICTA
       const docRef = await addDoc(collection(db, "informePreventivo"), {
+        codigo_sgs: informe.codigo_sgs || informe.id || "SIN_CODIGO",
         equipo: informe.equipo || "Equipo no definido",
-        id_interno: informe.id || "N/A",
-        codigo_sgs: informe.codigo_sgs || "N/A",
-        marca: informe.marca || "N/A",
-        modelo: informe.modelo || "N/A",
-        numero_serie: informe.numero_serie || "N/A",
-        fecha: serverTimestamp(),
-        respuestas: respuestas,
-        evidencias: urlsImagenes, 
-        firmas: urlsFirmas,       
-        respaldos: urlsRespaldos, 
-        nombres: nombres,          
-        usuario: auth.currentUser ? auth.currentUser.email : "Anon",
         estado: nuevoEstado,
+        evidencias: urlsImagenes,
+        fecha: serverTimestamp(),
+        firmas: urlsFirmas,
+        id_interno: informe.id || informe.codigo_sgs || "SIN_ID",
+        marca: informe.marca || "No especificado",
+        modelo: informe.modelo || "No especificado",
+        nombres: nombres,
+        numero_serie: informe.numero_serie || "No especificado",
+        respaldos: urlsRespaldos,
+        respuestas: respuestas,
+        usuario: auth.currentUser ? auth.currentUser.email : "Anon",
       });
 
       // CRÍTICO: Actualizar el estado del mantenimiento en planificacion
       if (mantenimientoId && informe.id) {
         const mantenimientoRef = doc(
-          db, 
-          "planificacion", 
-          informe.id, 
-          "mantenimientos", 
+          db,
+          "planificacion",
+          informe.id,
+          "mantenimientos",
           mantenimientoId
         );
 
@@ -142,14 +187,14 @@ export default function InformeResumen({ route, navigation }) {
         }
 
         await updateDoc(mantenimientoRef, datosActualizacion);
-        
+
         console.log(`✅ Estado del mantenimiento actualizado a: ${nuevoEstado}`);
       } else {
         console.warn("⚠️ No se pudo actualizar el estado: falta mantenimientoId o informe.id");
       }
 
       Alert.alert(
-        "Éxito", 
+        "Éxito",
         `El informe se guardó correctamente.\nEstado: ${nuevoEstado}`,
         [
           {
@@ -237,7 +282,6 @@ export default function InformeResumen({ route, navigation }) {
           <Text style={estilos.tituloSeccion}>Firmas</Text>
           {['mantenedor', 'supervisor', 'calidad'].map((rol, i) => {
             const firmaKey = rol === 'calidad' ? 'firma_a_calidad_dgm' : `firma_${rol}`;
-            const respaldoKey = rol === 'calidad' ? 'firma_a_calidad_dgm_Respaldo' : `firma_${rol}_Respaldo`;
             const nombreKey = `nombre_${rol}`;
 
             return (
@@ -332,6 +376,7 @@ const estilos = StyleSheet.create({
     paddingBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    borderRadius: 8,
   },
   pregunta: {
     fontSize: 14,
@@ -396,16 +441,6 @@ const estilos = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
-  },
-  respaldoContenedor: {
-    marginTop: 12,
-  },
-  imagenRespaldo: {
-    width: 120,
-    height: 120,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
   },
   textoFaltante: {
     fontSize: 14,

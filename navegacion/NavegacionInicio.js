@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 //Inico de sesion
 import InicioSesion from '../interfaz/InicioSesion';
+import OlvideContrasena from '../interfaz/OlvideContraseña';
 
 //Inicio mantenedor /Calendario/Formulario/Evidencia/Firma/Resumen/
 import InicioMantenedor from '../interfaz/InicioMantenedor';
@@ -23,7 +24,7 @@ import ObservacionesCorrectivo from '../interfaz/ObservacionesCorrectivo';
 import EvidenciasCorrectivo from '../interfaz/EvidenciasCorrectivo';
 import ResumenCorrectivo from '../interfaz/ResumenCorrectivo';
 
-import Formulario  from '../interfaz/Formulario';
+import Formulario from '../interfaz/Formulario';
 import Evidencia from '../interfaz/Evidencia';
 import Firma from '../interfaz/Firma';
 import InformeResumen from '../interfaz/InformeResumen';
@@ -45,6 +46,7 @@ export default function NavegacionInicio() {
     <NavigationContainer>
       <Stack.Navigator initialRouteName="InicioSesion" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="InicioSesion" component={InicioSesion} />
+        <Stack.Screen name="OlvideContrasena" component={OlvideContrasena} />
 
         <Stack.Screen name="InicioMantenedor" component={InicioMantenedor} />
         <Stack.Screen name="PerfilMantenedor" component={PerfilMantenedor} />
@@ -66,7 +68,7 @@ export default function NavegacionInicio() {
         <Stack.Screen name="Evidencia" component={Evidencia} />
         <Stack.Screen name="Firma" component={Firma} />
         <Stack.Screen name="InformeResumen" component={InformeResumen} />
-        
+
         <Stack.Screen name="InicioAdmin" component={InicioAdmin} />
         <Stack.Screen name="PerfilAdmin" component={PerfilAdmin} />
         <Stack.Screen name="CambioContrasenaAdmin" component={CambioContrasenaAdmin} />

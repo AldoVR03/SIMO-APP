@@ -13,11 +13,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import estilosComunes, { COLORES } from '../assets/estilos';
-import { auth, db } from '../servicio/firebase-config';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { db, secondaryAuth } from '../servicio/firebase-config';
+import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 
-export default function AgregarTrabajador({ navigation, route }) {
+export default function AgregarTrabajador({ navigation }) {
   const [nombre, setNombre] = useState('');
   const [rut, setRut] = useState('');
   const [correo, setCorreo] = useState('');
@@ -28,35 +28,35 @@ export default function AgregarTrabajador({ navigation, route }) {
   const validarRut = (rut) => {
     const rutLimpio = rut.replace(/\./g, '').replace(/-/g, '');
     if (rutLimpio.length < 8) return false;
-    
+
     const cuerpo = rutLimpio.slice(0, -1);
     const dv = rutLimpio.slice(-1).toUpperCase();
     if (!/^\d+$/.test(cuerpo)) return false;
-    
+
     let suma = 0;
     let multiplicador = 2;
-    
+
     for (let i = cuerpo.length - 1; i >= 0; i--) {
       suma += parseInt(cuerpo[i]) * multiplicador;
       multiplicador = multiplicador === 7 ? 2 : multiplicador + 1;
     }
-    
+
     const dvEsperado = 11 - (suma % 11);
     const dvFinal = dvEsperado === 11 ? '0' : dvEsperado === 10 ? 'K' : dvEsperado.toString();
-    
+
     return dv === dvFinal;
   };
 
   const formatearRut = (texto) => {
     const limpio = texto.replace(/[^0-9kK]/g, '');
     if (limpio.length === 0) return '';
-    
+
     const cuerpo = limpio.slice(0, -1);
     const dv = limpio.slice(-1);
-    
+
     let cuerpoFormateado = '';
     let contador = 0;
-    
+
     for (let i = cuerpo.length - 1; i >= 0; i--) {
       if (contador === 3) {
         cuerpoFormateado = '.' + cuerpoFormateado;
@@ -65,7 +65,7 @@ export default function AgregarTrabajador({ navigation, route }) {
       cuerpoFormateado = cuerpo[i] + cuerpoFormateado;
       contador++;
     }
-    
+
     return cuerpoFormateado + (dv ? '-' + dv.toUpperCase() : '');
   };
 
@@ -83,8 +83,14 @@ export default function AgregarTrabajador({ navigation, route }) {
     setContrasena(password);
   };
 
+  const limpiarFormulario = () => {
+    setNombre('');
+    setRut('');
+    setCorreo('');
+    setContrasena('');
+  };
+
   const handleAgregarTrabajador = async () => {
-    // Validaciones
     if (!nombre.trim()) {
       Alert.alert('Error', 'Por favor ingresa el nombre del trabajador');
       return;
@@ -120,94 +126,72 @@ export default function AgregarTrabajador({ navigation, route }) {
       return;
     }
 
-    // Confirmación antes de crear
-    Alert.alert(
-      'Confirmar Creación',
-      '⚠️ IMPORTANTE: Al crear el trabajador, tu sesión de administrador se cerrará temporalmente.\n\nDeberás iniciar sesión nuevamente con tus credenciales de admin.\n\n¿Deseas continuar?',
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel'
-        },
-        {
-          text: 'Continuar',
-          style: 'default',
-          onPress: async () => {
-            setCargando(true);
+    setCargando(true);
 
-            try {
-              const userCredential = await createUserWithEmailAndPassword(
-                auth,
-                correo.trim().toLowerCase(),
-                contrasena
-              );
+    try {
+      // Crear usuario usando la instancia secundaria de Auth
+      const userCredential = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        correo.trim().toLowerCase(),
+        contrasena
+      );
 
-              const nuevoUsuarioId = userCredential.user.uid;
+      const nuevoUsuarioId = userCredential.user.uid;
 
-              // Guardar datos en Firestore
-              await setDoc(doc(db, 'Usuario', nuevoUsuarioId), {
-                nombre: nombre.trim(),
-                rut: rut.trim(),
-                correo: correo.trim().toLowerCase(),
-                rol: 'mantenedor',
-                habilitado: true,
-                primerIngreso: true,
-                fechaCreacion: new Date().toISOString(),
-              });
+      // Guardar datos en Firestore (colección "Usuario" con mayúscula)
+      await setDoc(doc(db, 'Usuario', nuevoUsuarioId), {
+        nombre: nombre.trim(),
+        rut: rut.trim(),
+        correo: correo.trim().toLowerCase(),
+        rol: 'mantenedor',
+        habilitado: true,
+        primerIngreso: true,
+        fechaCreacion: new Date().toISOString(),
+      });
 
-              console.log('✅ Trabajador creado:', nuevoUsuarioId);
+      // Cerrar sesión del auth secundario (no afecta al admin)
+      await signOut(secondaryAuth);
 
-              // Cerrar sesión del trabajador recién creado
-              await auth.signOut();
+      console.log('✅ Trabajador creado:', nuevoUsuarioId);
 
-              // Mostrar credenciales y redirigir al login
-              Alert.alert(
-                '✅ Trabajador Creado Exitosamente',
-                `El trabajador ${nombre} ha sido registrado.\n\n` +
-                `📧 Correo: ${correo}\n` +
-                `🔐 Contraseña: ${contrasena}\n\n` +
-                `⚠️ IMPORTANTE:\n` +
-                `• Anota estas credenciales antes de continuar\n` +
-                `• El trabajador debe cambiar su contraseña en el primer inicio de sesión\n` +
-                `• Ahora debes iniciar sesión nuevamente como administrador`,
-                [
-                  {
-                    text: 'Entendido',
-                    onPress: () => {
-                      // Redirigir a la pantalla de login
-                      navigation.reset({
-                        index: 0,
-                        routes: [{ name: 'InicioSesion' }],
-                      });
-                    }
-                  }
-                ],
-                { cancelable: false }
-              );
+      Alert.alert(
+        '✅ Trabajador Creado',
+        `${nombre} ha sido registrado exitosamente.\n\n` +
+        `📧 Correo: ${correo}\n` +
+        `🔐 Contraseña: ${contrasena}\n\n` +
+        `Guarda estas credenciales para compartirlas con el trabajador.`,
+        [
+          {
+            text: 'Agregar Otro',
+            onPress: limpiarFormulario,
+          },
+          {
+            text: 'Volver',
+            onPress: () => navigation.goBack(),
+            style: 'cancel',
+          },
+        ]
+      );
 
-            } catch (error) {
-              console.error('❌ Error al agregar trabajador:', error);
-              
-              let mensajeError = 'No se pudo agregar el trabajador. Intenta nuevamente.';
-              
-              if (error.code === 'auth/email-already-in-use') {
-                mensajeError = 'Este correo electrónico ya está registrado';
-              } else if (error.code === 'auth/invalid-email') {
-                mensajeError = 'El correo electrónico no es válido';
-              } else if (error.code === 'auth/weak-password') {
-                mensajeError = 'La contraseña es muy débil';
-              } else if (error.code === 'auth/network-request-failed') {
-                mensajeError = 'Error de conexión. Verifica tu internet';
-              }
-              
-              Alert.alert('Error', mensajeError);
-            } finally {
-              setCargando(false);
-            }
-          }
-        }
-      ]
-    );
+    } catch (error) {
+      console.error('❌ Error al agregar trabajador:', error);
+
+      let mensajeError = 'No se pudo agregar el trabajador. Intenta nuevamente.';
+
+      if (error.code === 'auth/email-already-in-use') {
+        mensajeError = 'Este correo electrónico ya está registrado';
+      } else if (error.code === 'auth/invalid-email') {
+        mensajeError = 'El correo electrónico no es válido';
+      } else if (error.code === 'auth/weak-password') {
+        mensajeError = 'La contraseña es muy débil';
+      } else if (error.code === 'auth/network-request-failed') {
+        mensajeError = 'Error de conexión. Verifica tu internet';
+      }
+
+      Alert.alert('Error', mensajeError);
+    } finally {
+      setCargando(false);
+    }
   };
 
   return (
@@ -229,22 +213,6 @@ export default function AgregarTrabajador({ navigation, route }) {
           contentContainerStyle={{ padding: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={{
-            backgroundColor: '#fff3cd',
-            borderLeftWidth: 4,
-            borderLeftColor: '#ffc107',
-            padding: 16,
-            borderRadius: 8,
-            marginBottom: 24,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <Ionicons name="warning" size={24} color="#856404" style={{ marginRight: 12 }} />
-              <Text style={{ fontSize: 14, color: '#856404', lineHeight: 20, flex: 1 }}>
-                Al crear un trabajador, tu sesión se cerrará. Deberás iniciar sesión nuevamente como administrador.
-              </Text>
-            </View>
-          </View>
-
           <View style={{
             backgroundColor: '#fff',
             borderRadius: 12,
@@ -294,7 +262,7 @@ export default function AgregarTrabajador({ navigation, route }) {
                 <Ionicons name="card-outline" size={20} color="#666" />
                 <TextInput
                   style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 12, fontSize: 15, color: COLORES.texto }}
-                  placeholder="Ej: 12.345.678-9 o 12.345.678-K"
+                  placeholder="Ej: 12.345.678-9"
                   placeholderTextColor="#999"
                   value={rut}
                   onChangeText={(texto) => setRut(formatearRut(texto))}
@@ -303,9 +271,6 @@ export default function AgregarTrabajador({ navigation, route }) {
                   maxLength={12}
                 />
               </View>
-              <Text style={{ fontSize: 12, color: '#666', marginTop: 6, marginLeft: 4 }}>
-                Formato: 12.345.678-9 o 12.345.678-K
-              </Text>
             </View>
 
             {/* Correo */}
@@ -394,6 +359,8 @@ export default function AgregarTrabajador({ navigation, route }) {
               </>
             )}
           </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

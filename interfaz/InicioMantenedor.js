@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { format, addDays, subDays, startOfWeek, isToday, isBefore, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { collection, query, getDocs, doc, getDoc } from "firebase/firestore"; // ✅ Añadir getDoc
+import { collection, query, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "../servicio/firebase-config";
 import estilos, { COLORES } from '../assets/estilos';
 import { useFocusEffect } from '@react-navigation/native';
@@ -33,9 +33,9 @@ export default function InicioMantenedor({ navigation }) {
 
     const [cacheDatos, setCacheDatos] = useState(null);
     const [ultimaCarga, setUltimaCarga] = useState(null);
-    
+
     const { estaConectado } = useConexionInternet();
-    
+
     const lunes = startOfWeek(diaBase, { weekStartsOn: 1 });
 
     const diasSemana = Array.from({ length: 7 }, (_, i) => {
@@ -48,28 +48,25 @@ export default function InicioMantenedor({ navigation }) {
         };
     });
 
-    // ✅ Descargar plantillas solo de los equipos del día
     const descargarPlantillasDelDia = useCallback(async (informesDelDia) => {
         if (!estaConectado || informesDelDia.length === 0) return;
 
         try {
             console.log(`📥 Descargando plantillas de ${informesDelDia.length} equipos...`);
-            
+
             const plantillasExistentes = await obtenerPlantillas();
             const plantillasNuevas = { ...plantillasExistentes };
             let descargadas = 0;
 
             for (const informe of informesDelDia) {
                 const codigoSgs = informe.codigo_sgs || informe.id;
-                
-                // Si ya existe, no descargar de nuevo
+
                 if (plantillasNuevas[codigoSgs]) {
                     console.log(`⏭️ Plantilla ${codigoSgs} ya existe`);
                     continue;
                 }
 
                 try {
-                    // ✅ Usar Firestore correctamente
                     const plantillaRef = doc(db, 'plantilla', codigoSgs);
                     const snapshot = await getDoc(plantillaRef);
 
@@ -98,10 +95,10 @@ export default function InicioMantenedor({ navigation }) {
         try {
             console.log('🔄 Cargando datos desde Firebase...');
             const inicio = Date.now();
-            
+
             const equiposQuery = query(collection(db, "planificacion"));
             const equiposSnapshot = await getDocs(equiposQuery);
-            
+
             const todosLosDatos = [];
 
             const promesas = equiposSnapshot.docs.map(async (equipoDoc) => {
@@ -110,7 +107,7 @@ export default function InicioMantenedor({ navigation }) {
                     collection(doc(db, "planificacion", equipoDoc.id), "mantenimientos")
                 );
                 const mantenimientosSnapshot = await getDocs(mantenimientosQuery);
-                
+
                 mantenimientosSnapshot.docs.forEach((mantenimientoDoc) => {
                     todosLosDatos.push({
                         equipoId: equipoDoc.id,
@@ -121,12 +118,12 @@ export default function InicioMantenedor({ navigation }) {
                     });
                 });
             });
-            
+
             await Promise.all(promesas);
-            
+
             const fin = Date.now();
             console.log(`✅ Datos cargados en ${fin - inicio}ms. Total: ${todosLosDatos.length} registros`);
-            
+
             return todosLosDatos;
         } catch (error) {
             console.error("❌ Error al cargar datos:", error);
@@ -136,24 +133,24 @@ export default function InicioMantenedor({ navigation }) {
 
     const filtrarInformes = useCallback((datos, fecha, soloRealizados) => {
         const fechaFormato = format(fecha, 'yyyy-MM-dd');
-        
+
         const filtrados = datos.filter((item) => {
             const estado = item.estado;
-            
+
             if (soloRealizados) {
-                return item.fecha === fechaFormato && 
-                       (estado === "Pendiente" || estado === "proceso");
+                return item.fecha === fechaFormato &&
+                    (estado === "Pendiente" || estado === "proceso");
             } else {
                 if (estado === "Completado" && item.fechaCompletado) {
                     const fechaCompletado = item.fechaCompletado;
                     const fechaLimite = format(addDays(parseISO(fechaCompletado), 4), 'yyyy-MM-dd');
                     return fechaFormato >= fechaCompletado && fechaFormato <= fechaLimite;
                 }
-                
+
                 if (estado === "Faltante de firmas" && item.fecha === fechaFormato) {
                     return true;
                 }
-                
+
                 return false;
             }
         });
@@ -174,9 +171,9 @@ export default function InicioMantenedor({ navigation }) {
     const cargarInformes = useCallback(async (forzarRecarga = false) => {
         try {
             setCargando(true);
-            
+
             const ahora = Date.now();
-            const CACHE_DURACION = 5 * 60 * 1000; 
+            const CACHE_DURACION = 5 * 60 * 1000;
 
             if (!forzarRecarga && cacheDatos && ultimaCarga && (ahora - ultimaCarga < CACHE_DURACION)) {
                 console.log('⚡ Usando caché (instantáneo)');
@@ -190,15 +187,14 @@ export default function InicioMantenedor({ navigation }) {
             const nuevosDatos = await cargarTodosDatos();
             setCacheDatos(nuevosDatos);
             setUltimaCarga(ahora);
-            
+
             const informesFiltrados = filtrarInformes(nuevosDatos, diaSeleccionado, mostrarRealizados);
             setInformes(informesFiltrados);
 
-            // ✅ Descargar plantillas de los equipos del día
             if (estaConectado && informesFiltrados.length > 0) {
                 await descargarPlantillasDelDia(informesFiltrados);
             }
-            
+
         } catch (error) {
             console.error("❌ Error al cargar informes:", error);
         } finally {
@@ -206,14 +202,13 @@ export default function InicioMantenedor({ navigation }) {
         }
     }, [diaSeleccionado, mostrarRealizados, cacheDatos, ultimaCarga, estaConectado, cargarTodosDatos, filtrarInformes, descargarPlantillasDelDia]);
 
-    // ✅ Sincronizar cuando vuelva internet
     const sincronizarDatos = useCallback(async () => {
         if (!estaConectado) return;
 
         try {
             setSincronizando(true);
             const resultado = await sincronizarMantenimientosOffline();
-            
+
             if (resultado.success && resultado.sincronizados > 0) {
                 Alert.alert(
                     'Sincronización exitosa',
@@ -244,7 +239,7 @@ export default function InicioMantenedor({ navigation }) {
         useCallback(() => {
             console.log('🔄 Pantalla enfocada');
             verificarDatosPendientes();
-            cargarInformes(true); 
+            cargarInformes(true);
         }, [])
     );
 
@@ -296,8 +291,8 @@ export default function InicioMantenedor({ navigation }) {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
-            <IndicadorConexion 
-                estaConectado={estaConectado} 
+            <IndicadorConexion
+                estaConectado={estaConectado}
                 datosPendientes={datosPendientes}
             />
 
@@ -305,10 +300,10 @@ export default function InicioMantenedor({ navigation }) {
                 <View style={estilos.encabezado}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Text style={estilos.logoTexto}>SGS</Text>
-                        <Ionicons 
-                            name={estaConectado ? "cloud-done" : "cloud-offline"} 
-                            size={20} 
-                            color={estaConectado ? "#2ecc71" : "#e74c3c"} 
+                        <Ionicons
+                            name={estaConectado ? "cloud-done" : "cloud-offline"}
+                            size={20}
+                            color={estaConectado ? "#2ecc71" : "#e74c3c"}
                         />
                     </View>
                     <TouchableOpacity onPress={() => navigation.navigate('PerfilMantenedor')}>
@@ -403,11 +398,11 @@ export default function InicioMantenedor({ navigation }) {
                             No hay informes disponibles para esta fecha.
                         </Text>
                     ) : (
-                        informes.map((informe) => {
+                        informes.map((informe, index) => {
                             const estadoInfo = obtenerEstadoTextoYColor(informe);
                             return (
                                 <TouchableOpacity
-                                    key={informe.id}
+                                    key={`${informe.id}-${informe.mantenimientoDelDia?.id || index}`}
                                     style={[estilos.tarjetaInforme, { backgroundColor: '#fff', borderColor: estadoInfo.fondo, borderWidth: 2 }]}
                                     onPress={() => setInformeSeleccionado(informe)}
                                 >
@@ -424,7 +419,7 @@ export default function InicioMantenedor({ navigation }) {
                         })
                     )}
                 </ScrollView>
-                
+
                 {informeSeleccionado && (
                     <View style={estilos.resumen}>
                         <Text style={estilos.tituloResumen}>Resumen del equipo</Text>
@@ -454,18 +449,18 @@ export default function InicioMantenedor({ navigation }) {
                             }}
                         >
                             <Text style={estilos.textoBotonIniciar}>
-                                {informeSeleccionado.mantenimientoDelDia.estado === "Completado" 
+                                {informeSeleccionado.mantenimientoDelDia.estado === "Completado"
                                     ? "Ver informe"
                                     : informeSeleccionado.mantenimientoDelDia.estado === "Faltante de firmas"
-                                    ? "Completar firmas"
-                                    : "Iniciar informe"}
+                                        ? "Completar firmas"
+                                        : "Iniciar informe"}
                             </Text>
                         </TouchableOpacity>
                     </View>
                 )}
 
                 <View style={estilos.botonera}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={estilos.botonIcono}
                         onPress={() => navigation.navigate('EscaneoQR')}
                     >

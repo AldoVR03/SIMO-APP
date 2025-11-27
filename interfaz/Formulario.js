@@ -13,6 +13,8 @@ import {
 import { collection, doc, getDoc } from "firebase/firestore";
 import { db } from "../servicio/firebase-config";
 import { COLORES } from '../assets/estilos';
+import { obtenerPlantillas } from '../servicio/offline-storage';
+import { verificarConexionInternet } from '../servicio/network-service';
 
 const opciones = ['Sí', 'No', 'No aplica'];
 const opcionesOtros = ['Sí', 'No'];
@@ -25,18 +27,48 @@ export default function Formulario({ route, navigation }) {
 
     const { informe, mantenimientoId } = route.params;
 
-useEffect(() => {
-    async function cargarDatosCompletos() {
-        try {
-            setCargando(true);
+    useEffect(() => {
+        async function cargarDatosCompletos() {
+            try {
+                setCargando(true);
 
-            if (informe && (informe.codigo_sgs || informe.id)) {
+                if (informe && (informe.codigo_sgs || informe.id)) {
+                    const idDoc = informe.codigo_sgs || informe.id;
+                    const equipoRef = doc(db, "plantilla", idDoc);
+                    const equipoSnap = await getDoc(equipoRef);
+
+                    if (equipoSnap.exists()) {
+                        const datosEquipo = equipoSnap.data();
+                        const informeConDatos = {
+                            ...informe,
+                            marca: datosEquipo.marca || 'No especificado',
+                            modelo: datosEquipo.modelo || 'No especificado',
+                            numero_serie: datosEquipo.numero_serie || 'No especificado'
+                        };
+                        setInformeCompleto(informeConDatos);
+                        console.log('✅ Datos del equipo cargados:', informeConDatos);
+                    } else {
+                        setInformeCompleto(informe);
+                        console.log('⚠️ No se encontró el documento del equipo en plantilla');
+                    }
+                } else {
+                    setInformeCompleto(informe);
+                }
+            } catch (error) {
+                console.error('❌ Error al cargar datos del equipo:', error);
+                setInformeCompleto(informe);
+            } finally {
+                setCargando(false);
+            }
+        }
+
+        async function cargarDatosOffline() {
+            try {
+                const plantillasOffline = await obtenerPlantillas();
                 const idDoc = informe.codigo_sgs || informe.id;
-                const equipoRef = doc(db, "plantilla", idDoc);
-                const equipoSnap = await getDoc(equipoRef);
 
-                if (equipoSnap.exists()) {
-                    const datosEquipo = equipoSnap.data();
+                if (plantillasOffline && plantillasOffline[idDoc]) {
+                    const datosEquipo = plantillasOffline[idDoc];
                     const informeConDatos = {
                         ...informe,
                         marca: datosEquipo.marca || 'No especificado',
@@ -44,24 +76,29 @@ useEffect(() => {
                         numero_serie: datosEquipo.numero_serie || 'No especificado'
                     };
                     setInformeCompleto(informeConDatos);
-                    console.log('✅ Datos del equipo cargados:', informeConDatos);
+                    console.log('✅ Datos del equipo cargados desde OFFLINE:', informeConDatos);
                 } else {
+                    console.log('⚠️ No se encontraron datos offline para:', idDoc);
                     setInformeCompleto(informe);
-                    console.log('⚠️ No se encontró el documento del equipo en plantilla');
                 }
-            } else {
+            } catch (error) {
+                console.error('❌ Error cargando datos offline:', error);
                 setInformeCompleto(informe);
             }
-        } catch (error) {
-            console.error('❌ Error al cargar datos del equipo:', error);
-            setInformeCompleto(informe);
-        } finally {
-            setCargando(false);
         }
-    }
 
-    cargarDatosCompletos();
-}, [informe?.codigo_sgs, informe?.id]);
+        const verificarYCargar = async () => {
+            const conectado = await verificarConexionInternet();
+            if (conectado) {
+                cargarDatosCompletos();
+            } else {
+                console.log('📴 Modo offline detectado en Formulario');
+                cargarDatosOffline();
+            }
+        };
+
+        verificarYCargar();
+    }, [informe?.codigo_sgs, informe?.id]);
 
 
     useEffect(() => {
@@ -115,7 +152,59 @@ useEffect(() => {
                 setCargando(false);
             }
         }
-        cargarPautaMantenimiento();
+
+        async function cargarPautaOffline() {
+            try {
+                const plantillasOffline = await obtenerPlantillas();
+                const idDoc = informe.id;
+
+                let docData = plantillasOffline[idDoc];
+
+                if (!docData && informe.codigo_sgs) {
+                    docData = plantillasOffline[informe.codigo_sgs];
+                }
+
+                if (docData) {
+                    console.log("✅ Plantilla encontrada OFFLINE");
+                    let pautaEncontrada = null;
+
+                    if (docData.pauta_mantenimiento && Array.isArray(docData.pauta_mantenimiento)) {
+                        pautaEncontrada = docData.pauta_mantenimiento;
+                    } else if (docData.Plan_de_mantencion && Array.isArray(docData.Plan_de_mantencion)) {
+                        pautaEncontrada = docData.Plan_de_mantencion;
+                    } else if (docData["plan de mantencion"] && Array.isArray(docData["plan de mantencion"])) {
+                        pautaEncontrada = docData["plan de mantencion"];
+                    }
+
+                    if (pautaEncontrada) {
+                        setPreguntas(pautaEncontrada);
+                        console.log("Preguntas cargadas desde OFFLINE:", pautaEncontrada.length);
+                    } else {
+                        console.log("No se encontró pauta válida en plantilla offline");
+                        setPreguntas([]);
+                    }
+                } else {
+                    console.log("❌ No se encontró plantilla offline para ID:", idDoc);
+                    setPreguntas([]);
+                }
+            } catch (error) {
+                console.error("Error cargando pauta offline:", error);
+                setPreguntas([]);
+            } finally {
+                setCargando(false);
+            }
+        }
+
+        const verificarYCargarPauta = async () => {
+            const conectado = await verificarConexionInternet();
+            if (conectado) {
+                cargarPautaMantenimiento();
+            } else {
+                cargarPautaOffline();
+            }
+        };
+
+        verificarYCargarPauta();
     }, [informe?.id]);
 
     const manejarRespuesta = (preguntaTexto, indice, valor) => {
@@ -187,35 +276,35 @@ useEffect(() => {
     const navegarAEvidencia = () => {
         // Verificar si todas las preguntas obligatorias están respondidas
         const preguntasSinResponder = [];
-        
+
         // Encontrar el índice de la pregunta "Otros"
         const indiceOtros = preguntas.findIndex(p => {
             const texto = p.pregunta || p;
             return texto === 'Otros';
         });
-        
+
         // Si "Otros" tiene respuesta "No", solo validar que "Otros" esté respondido
         const otrosRespondioNo = indiceOtros !== -1 && respuestas[indiceOtros]?.respuesta === 'No';
-        
+
         preguntas.forEach((pregunta, index) => {
             const preguntaTexto = pregunta.pregunta || pregunta;
             const esOtros = preguntaTexto === 'Otros';
-            
+
             // Si "Otros" respondió "No", no validar las demás preguntas
             if (otrosRespondioNo && !esOtros) {
                 return;
             }
-            
+
             // Validar que la pregunta tenga respuesta
             if (!respuestas[index]?.respuesta) {
                 preguntasSinResponder.push(preguntaTexto);
             }
-            
+
             // Si es "Otros" y respondió "Sí", validar que todas las acciones tengan respuesta
             if (esOtros && respuestas[index]?.respuesta === 'Sí') {
                 const acciones = respuestas[index]?.otros || [];
                 const accionesSinResponder = acciones.filter(acc => !acc.respuesta);
-                
+
                 if (accionesSinResponder.length > 0) {
                     accionesSinResponder.forEach(acc => {
                         preguntasSinResponder.push(`"${acc.accion}" en Otros mantenciones`);
@@ -223,13 +312,13 @@ useEffect(() => {
                 }
             }
         });
-        
+
         // Si hay preguntas sin responder, mostrar alerta
         if (preguntasSinResponder.length > 0) {
             const mensaje = preguntasSinResponder.length === 1
                 ? `Falta responder la siguiente pregunta:\n\n• ${preguntasSinResponder[0]}`
                 : `Faltan responder las siguientes preguntas:\n\n${preguntasSinResponder.map(p => `• ${p}`).join('\n')}`;
-            
+
             Alert.alert(
                 'Preguntas sin responder',
                 mensaje,
@@ -237,7 +326,7 @@ useEffect(() => {
             );
             return;
         }
-        
+
         // Si todo está correcto, navegar a Evidencia
         navigation.navigate('Evidencia', {
             informe: informeCompleto || informe,

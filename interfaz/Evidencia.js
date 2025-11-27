@@ -5,42 +5,25 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import estilosComunes, { COLORES } from '../assets/estilos';
-
-const uploadToCloudinary = async (uri) => {
-  const data = new FormData();
-  data.append("file", {
-    uri,
-    type: "image/jpeg",
-    name: "evidencia.jpg",
-  });
-  data.append("upload_preset", "SIMO-APP-Evidencia-Firma");
-
-  try {
-    const res = await fetch("https://api.cloudinary.com/v1_1/due9nyqmr/image/upload", {
-      method: "POST",
-      body: data,
-    });
-
-    const json = await res.json();
-    return json.secure_url;
-  } catch (err) {
-    console.error("Error subiendo a Cloudinary:", err);
-    return null;
-  }
-};
+import { procesarImagenOffline } from '../servicio/sync-service';
+import { useConexionInternet } from '../servicio/network-service';
 
 export default function Evidencia({ navigation, route }) {
   console.log("Datos recibidos en Evidencia:", route.params);
   const { informe, respuestas, mantenimientoId } = route.params;
+
   const [imagenes, setImagenes] = useState([]);
   const [cargando, setCargando] = useState(false);
 
-  // ✅ Usar DocumentPicker para seleccionar imágenes desde archivos
+  // Usar el hook para detección en tiempo real
+  const { estaConectado } = useConexionInternet();
+
   const seleccionarImagen = async () => {
     if (imagenes.length >= 2) {
       Alert.alert('Límite alcanzado', 'Solo se permiten 2 evidencias.');
@@ -50,21 +33,21 @@ export default function Evidencia({ navigation, route }) {
     try {
       setCargando(true);
 
-      // ✅ Abrir selector de archivos (no requiere permisos especiales)
+      // Abrir selector de archivos
       const resultado = await DocumentPicker.getDocumentAsync({
-        type: 'image/*', // Solo imágenes
+        type: 'image/*',
         copyToCacheDirectory: true,
         multiple: false,
       });
 
-      console.log('Resultado DocumentPicker:', resultado);
+      console.log('📁 Resultado DocumentPicker:', resultado);
 
       if (resultado.canceled) {
         setCargando(false);
         return;
       }
 
-      // ✅ Verificar que sea una imagen
+      // Verificar que sea una imagen
       const archivo = resultado.assets[0];
       if (!archivo.mimeType?.startsWith('image/')) {
         Alert.alert('Error', 'Por favor selecciona una imagen válida');
@@ -72,18 +55,34 @@ export default function Evidencia({ navigation, route }) {
         return;
       }
 
-      // ✅ Subir a Cloudinary
-      const cloudUrl = await uploadToCloudinary(archivo.uri);
+      console.log('📸 Procesando imagen:', archivo.uri);
 
-      if (cloudUrl) {
-        setImagenes([...imagenes, cloudUrl]);
-        Alert.alert('Éxito', 'Imagen subida correctamente');
+      // Procesar imagen (subirá a Cloudinary si hay conexión, o guardará localmente)
+      // procesarImagenOffline maneja internamente la lógica de conexión, pero
+      // el hook useConexionInternet nos da el estado para la UI
+      const imagenProcesada = await procesarImagenOffline(archivo.uri);
+
+      if (imagenProcesada && imagenProcesada.url) {
+        setImagenes([...imagenes, {
+          url: imagenProcesada.url,
+          tipo: imagenProcesada.tipo, // 'cloud' o 'local'
+        }]);
+
+        if (imagenProcesada.tipo === 'cloud') {
+          Alert.alert('✅ Éxito', 'Imagen subida a la nube correctamente');
+        } else {
+          Alert.alert(
+            '📴 Modo Offline',
+            'Imagen guardada localmente. Se subirá automáticamente cuando haya conexión.',
+            [{ text: 'Entendido' }]
+          );
+        }
       } else {
-        Alert.alert('Error', 'No se pudo subir la imagen. Intenta nuevamente.');
+        Alert.alert('Error', 'No se pudo procesar la imagen. Intenta nuevamente.');
       }
     } catch (error) {
-      console.error('Error al seleccionar imagen:', error);
-      Alert.alert('Error', 'Ocurrió un problema al seleccionar la imagen.');
+      console.error('❌ Error al seleccionar imagen:', error);
+      Alert.alert('Error', 'Ocurrió un problema al seleccionar la imagen: ' + error.message);
     } finally {
       setCargando(false);
     }
@@ -117,11 +116,19 @@ export default function Evidencia({ navigation, route }) {
       return;
     }
 
+    // Extraer solo las URLs para pasar a Firma
+    const urlsImagenes = imagenes.map(img => img.url);
+
+    console.log('📤 Navegando a Firma con:', {
+      imagenes: urlsImagenes,
+      tipos: imagenes.map(img => img.tipo)
+    });
+
     navigation.navigate('Firma', {
       equipo: informe?.equipo || "Equipo no definido",
       informe,
       respuestas,
-      imagenes,
+      imagenes: urlsImagenes,
       mantenimientoId,
     });
   };
@@ -137,14 +144,41 @@ export default function Evidencia({ navigation, route }) {
         <View style={{ width: 24 }} />
       </View>
 
+      {/* Indicador de conexión */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        backgroundColor: estaConectado ? '#d4edda' : '#fff3cd',
+        borderRadius: 8,
+        marginHorizontal: 20,
+        marginBottom: 10,
+      }}>
+        <Ionicons
+          name={estaConectado ? 'cloud-done' : 'cloud-offline'}
+          size={20}
+          color={estaConectado ? '#155724' : '#856404'}
+        />
+        <Text style={{
+          marginLeft: 8,
+          color: estaConectado ? '#155724' : '#856404',
+          fontWeight: 'bold',
+          fontSize: 12,
+        }}>
+          {estaConectado ? 'Conectado' : 'Modo Offline'}
+        </Text>
+      </View>
+
       {/* Título */}
       <Text style={estilosComunes.titulo}>Agregar Evidencias</Text>
       <Text style={[estilosComunes.etiqueta, { textAlign: 'center', marginBottom: 20 }]}>
         Sube hasta 2 imágenes como evidencia del mantenimiento
+        {!estaConectado && '\n(Se guardarán localmente y subirán después)'}
       </Text>
 
       {/* Área de imágenes */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30, paddingHorizontal: 20 }}>
         {[...Array(2)].map((_, i) => (
           <TouchableOpacity
             key={i}
@@ -171,14 +205,34 @@ export default function Evidencia({ navigation, route }) {
           >
             {imagenes[i] ? (
               <>
-                <Image 
-                  source={{ uri: imagenes[i] }} 
-                  style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    borderRadius: 8 
-                  }} 
+                <Image
+                  source={{ uri: imagenes[i].url }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: 8
+                  }}
+                  resizeMode="cover"
                 />
+                {/* Indicador de tipo de imagen */}
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    left: 8,
+                    backgroundColor: imagenes[i].tipo === 'cloud'
+                      ? 'rgba(40, 167, 69, 0.9)'
+                      : 'rgba(255, 193, 7, 0.9)',
+                    borderRadius: 12,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>
+                    {imagenes[i].tipo === 'cloud' ? '☁️ Nube' : '📱 Local'}
+                  </Text>
+                </View>
+                {/* Botón eliminar */}
                 <View
                   style={{
                     position: 'absolute',
@@ -197,23 +251,23 @@ export default function Evidencia({ navigation, route }) {
               </>
             ) : (
               <>
-                <Ionicons 
-                  name="document-attach" 
-                  size={40} 
-                  color={imagenes.length >= 2 ? '#ccc' : COLORES.primario} 
+                <Ionicons
+                  name="document-attach"
+                  size={40}
+                  color={imagenes.length >= 2 ? '#ccc' : COLORES.primario}
                 />
-                <Text style={{ 
-                  marginTop: 8, 
-                  color: imagenes.length >= 2 ? '#ccc' : '#666', 
+                <Text style={{
+                  marginTop: 8,
+                  color: imagenes.length >= 2 ? '#ccc' : '#666',
                   fontSize: 12,
                   textAlign: 'center',
                   paddingHorizontal: 10,
                 }}>
-                  {cargando 
-                    ? 'Subiendo...' 
-                    : imagenes.length >= 2 
-                    ? 'Límite alcanzado' 
-                    : 'Seleccionar archivo'}
+                  {cargando
+                    ? 'Procesando...'
+                    : imagenes.length >= 2
+                      ? 'Límite alcanzado'
+                      : 'Seleccionar archivo'}
                 </Text>
               </>
             )}
@@ -223,28 +277,59 @@ export default function Evidencia({ navigation, route }) {
 
       {/* Indicador de carga */}
       {cargando && (
-        <Text style={{ 
-          textAlign: 'center', 
-          color: COLORES.primario, 
-          marginBottom: 10,
-          fontWeight: 'bold' 
+        <View style={{
+          alignItems: 'center',
+          marginBottom: 20,
         }}>
-          Subiendo imagen a la nube...
-        </Text>
+          <ActivityIndicator size="large" color={COLORES.primario} />
+          <Text style={{
+            marginTop: 10,
+            textAlign: 'center',
+            color: COLORES.primario,
+            fontWeight: 'bold'
+          }}>
+            {estaConectado ? 'Subiendo imagen a la nube...' : 'Guardando imagen localmente...'}
+          </Text>
+        </View>
+      )}
+
+      {/* Resumen de imágenes */}
+      {imagenes.length > 0 && (
+        <View style={{
+          marginHorizontal: 20,
+          marginBottom: 20,
+          padding: 12,
+          backgroundColor: '#f8f9fa',
+          borderRadius: 8,
+        }}>
+          <Text style={{ fontSize: 14, color: '#666', textAlign: 'center' }}>
+            {imagenes.length} de 2 imágenes agregadas
+          </Text>
+          {!estaConectado && imagenes.some(img => img.tipo === 'local') && (
+            <Text style={{
+              fontSize: 12,
+              color: '#856404',
+              textAlign: 'center',
+              marginTop: 4,
+            }}>
+              ⚠️ Algunas imágenes se subirán cuando haya conexión
+            </Text>
+          )}
+        </View>
       )}
 
       {/* Botón continuar */}
       <TouchableOpacity
         style={[
           estilosComunes.boton,
-          { marginTop: 'auto', marginBottom: 20 },
+          { marginTop: 'auto', marginBottom: 20, marginHorizontal: 20 },
           (imagenes.length === 0 || cargando) && { backgroundColor: '#ccc' }
         ]}
         onPress={navegarAFirma}
         disabled={imagenes.length === 0 || cargando}
       >
         <Text style={estilosComunes.textoBoton}>
-          {cargando ? 'Subiendo...' : 'Continuar a Firmas'}
+          {cargando ? 'Procesando...' : 'Continuar a Firmas'}
         </Text>
       </TouchableOpacity>
     </SafeAreaView>

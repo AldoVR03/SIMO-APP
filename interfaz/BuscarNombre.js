@@ -14,7 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { collection, query, orderBy, startAt, endAt, getDocs } from "firebase/firestore";
 import { db } from "../servicio/firebase-config";
-import estilosComunes, { COLORES } from '../assets/estilos'; 
+import estilosComunes, { COLORES } from '../assets/estilos';
+
 export default function BuscarNombre({ navigation }) {
   const [busqueda, setBusqueda] = useState("");
   const [resultados, setResultados] = useState([]);
@@ -28,7 +29,7 @@ export default function BuscarNombre({ navigation }) {
     const obtenerEquipos = async () => {
       try {
         const busquedaMayus = busqueda.toUpperCase();
-        
+
         const q = query(
           collection(db, "equipos"),
           orderBy("nombre"),
@@ -37,11 +38,11 @@ export default function BuscarNombre({ navigation }) {
         );
 
         const snapshot = await getDocs(q);
-        const lista = snapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data() 
+        const lista = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
         }));
-        
+
         setResultados(lista);
       } catch (error) {
         console.error("❌ Error en búsqueda:", error);
@@ -54,7 +55,7 @@ export default function BuscarNombre({ navigation }) {
   return (
     <View style={estilosComunes.contenedor}>
       <Text style={estilosComunes.titulo}>Buscar Equipo</Text>
-      
+
       <Text style={estilosComunes.etiqueta}>Nombre del equipo:</Text>
       <TextInput
         style={estilosComunes.entrada}
@@ -70,12 +71,12 @@ export default function BuscarNombre({ navigation }) {
         keyExtractor={(item) => item.id}
         style={{ width: '100%', marginTop: 10 }}
         renderItem={({ item }) => (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={estilosComunes.tarjetaInforme}
             onPress={() => {
-              navigation.navigate('InformesEquipo', { 
+              navigation.navigate('InformesEquipo', {
                 equipoId: item.id,
-                equipoNombre: item.nombre 
+                equipoNombre: item.nombre
               });
             }}
           >

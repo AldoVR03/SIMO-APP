@@ -65,7 +65,7 @@ export const guardarMantenimientoOffline = async (mantenimiento) => {
       KEYS.MANTENIMIENTOS_OFFLINE,
       JSON.stringify(mantenimientosOffline)
     );
-    console.log('✅ Mantenimiento guardado offline');
+    console.log('✅ Mantenimiento guardado offline para sincronización posterior');
     return true;
   } catch (error) {
     console.error('❌ Error guardando mantenimiento offline:', error);
@@ -73,10 +73,35 @@ export const guardarMantenimientoOffline = async (mantenimiento) => {
   }
 };
 
+export const actualizarMantenimientoOffline = async (mantenimientoActualizado) => {
+  try {
+    const mantenimientos = await obtenerMantenimientosOffline();
+    const index = mantenimientos.findIndex(m => m.mantenimientoId === mantenimientoActualizado.mantenimientoId);
+
+    if (index !== -1) {
+      mantenimientos[index] = {
+        ...mantenimientos[index],
+        ...mantenimientoActualizado,
+        timestamp_offline: new Date().toISOString() // Actualizar timestamp
+      };
+
+      await AsyncStorage.setItem(KEYS.MANTENIMIENTOS_OFFLINE, JSON.stringify(mantenimientos));
+      console.log('✅ Mantenimiento offline actualizado correctamente');
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('❌ Error actualizando mantenimiento offline:', error);
+    return false;
+  }
+};
+
 export const obtenerMantenimientosOffline = async () => {
   try {
     const data = await AsyncStorage.getItem(KEYS.MANTENIMIENTOS_OFFLINE);
-    return data ? JSON.parse(data) : [];
+    const mantenimientos = data ? JSON.parse(data) : [];
+    console.log(`📦 Mantenimientos offline encontrados: ${mantenimientos.length}`);
+    return mantenimientos;
   } catch (error) {
     console.error('❌ Error obteniendo mantenimientos offline:', error);
     return [];
@@ -92,26 +117,60 @@ export const limpiarMantenimientosOffline = async () => {
   }
 };
 
+export const eliminarMantenimientoOffline = async (mantenimientoId) => {
+  try {
+    const mantenimientos = await obtenerMantenimientosOffline();
+    const nuevosMantenimientos = mantenimientos.filter(m => m.mantenimientoId !== mantenimientoId);
+
+    await AsyncStorage.setItem(
+      KEYS.MANTENIMIENTOS_OFFLINE,
+      JSON.stringify(nuevosMantenimientos)
+    );
+    console.log(`✅ Mantenimiento ${mantenimientoId} eliminado de offline`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error eliminando mantenimiento offline:', error);
+    return false;
+  }
+};
+
+export const formatearFecha = (fecha) => {
+  if (!fecha) return null;
+  const d = new Date(fecha);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // ===== IMÁGENES EN CACHÉ =====
 export const guardarImagenLocal = async (uri, nombreArchivo) => {
   try {
+    console.log('💾 Guardando imagen localmente:', uri);
+
     const directorioCache = `${FileSystem.documentDirectory}imagenes_cache/`;
-    
+
+    // Verificar si existe el directorio, si no, crearlo
     const dirInfo = await FileSystem.getInfoAsync(directorioCache);
     if (!dirInfo.exists) {
       await FileSystem.makeDirectoryAsync(directorioCache, { intermediates: true });
+      console.log('📁 Directorio de cache creado');
     }
 
     const rutaLocal = `${directorioCache}${nombreArchivo}`;
+
+    // Copiar el archivo a la ubicación local
     await FileSystem.copyAsync({
       from: uri,
       to: rutaLocal,
     });
 
-    console.log('✅ Imagen guardada localmente:', rutaLocal);
+    console.log('✅ Imagen guardada localmente en:', rutaLocal);
     return rutaLocal;
   } catch (error) {
     console.error('❌ Error guardando imagen local:', error);
+    console.error('   URI:', uri);
+    console.error('   Nombre:', nombreArchivo);
     return null;
   }
 };
@@ -120,10 +179,12 @@ export const obtenerImagenLocal = async (nombreArchivo) => {
   try {
     const rutaLocal = `${FileSystem.documentDirectory}imagenes_cache/${nombreArchivo}`;
     const info = await FileSystem.getInfoAsync(rutaLocal);
-    
+
     if (info.exists) {
+      console.log('✅ Imagen local encontrada:', rutaLocal);
       return rutaLocal;
     }
+    console.log('⚠️ Imagen local no encontrada:', rutaLocal);
     return null;
   } catch (error) {
     console.error('❌ Error obteniendo imagen local:', error);
@@ -134,10 +195,9 @@ export const obtenerImagenLocal = async (nombreArchivo) => {
 // ===== ÚLTIMA SINCRONIZACIÓN =====
 export const guardarUltimaSincronizacion = async () => {
   try {
-    await AsyncStorage.setItem(
-      KEYS.ULTIMA_SINCRONIZACION,
-      new Date().toISOString()
-    );
+    const fechaActual = new Date().toISOString();
+    await AsyncStorage.setItem(KEYS.ULTIMA_SINCRONIZACION, fechaActual);
+    console.log('✅ Última sincronización guardada:', fechaActual);
   } catch (error) {
     console.error('❌ Error guardando última sincronización:', error);
   }
@@ -163,14 +223,14 @@ export const limpiarAlmacenamientoOffline = async () => {
       KEYS.IMAGENES_CACHE,
       KEYS.ULTIMA_SINCRONIZACION,
     ]);
-    
+
     const directorioCache = `${FileSystem.documentDirectory}imagenes_cache/`;
     const dirInfo = await FileSystem.getInfoAsync(directorioCache);
     if (dirInfo.exists) {
-      await FileSystem.deleteAsync(directorioCache);
+      await FileSystem.deleteAsync(directorioCache, { idempotent: true });
     }
-    
-    console.log('✅ Almacenamiento offline limpiado');
+
+    console.log('✅ Almacenamiento offline completamente limpiado');
   } catch (error) {
     console.error('❌ Error limpiando almacenamiento offline:', error);
   }

@@ -24,7 +24,6 @@ export default function InicioAdmin({ navigation }) {
   const [expandido, setExpandido] = useState(null);
   const [nombreAdmin, setNombreAdmin] = useState('Administrador');
 
-  // ✅ Usar useFocusEffect para recargar datos al volver a la pantalla
   useFocusEffect(
     React.useCallback(() => {
       cargarDatos();
@@ -36,11 +35,12 @@ export default function InicioAdmin({ navigation }) {
     try {
       const user = auth.currentUser;
       if (user) {
-        const docRef = doc(db, "usuarios", user.uid);
+        // Intentar primero en "Usuario"
+        const docRef = doc(db, "Usuario", user.uid);
         let docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
-          const docRefAlt = doc(db, "Usuario", user.uid);
+          const docRefAlt = doc(db, "usuarios", user.uid);
           docSnap = await getDoc(docRefAlt);
         }
 
@@ -64,28 +64,30 @@ export default function InicioAdmin({ navigation }) {
   const cargarTrabajadores = async () => {
     try {
       setCargando(true);
-      
-      // Buscar en colección "usuarios" con rol "mantenedor"
+
+      // Buscar en colección "Usuario" (con mayúscula, como está en Firebase)
       const q = query(
-        collection(db, 'usuarios'),
+        collection(db, 'Usuario'),
         where('rol', '==', 'mantenedor')
       );
-      
+
       const snapshot = await getDocs(q);
       const listaTrabajadores = snapshot.docs.map(doc => ({
         id: doc.id,
+        coleccion: 'Usuario',
         ...doc.data()
       }));
 
-      // Si no hay resultados, intentar con "Usuario"
+      // Si no hay resultados, intentar con "usuarios" (por si hay datos antiguos)
       if (listaTrabajadores.length === 0) {
         const qAlt = query(
-          collection(db, 'Usuario'),
+          collection(db, 'usuarios'),
           where('rol', '==', 'mantenedor')
         );
         const snapshotAlt = await getDocs(qAlt);
         const listaTrabajadoresAlt = snapshotAlt.docs.map(doc => ({
           id: doc.id,
+          coleccion: 'usuarios',
           ...doc.data()
         }));
         setTrabajadores(listaTrabajadoresAlt);
@@ -104,7 +106,6 @@ export default function InicioAdmin({ navigation }) {
 
   const cargarEquipos = async () => {
     try {
-      // Intentar cargar equipos desde la colección "equipos"
       const snapshot = await getDocs(collection(db, 'equipos'));
       const listaEquipos = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -121,14 +122,13 @@ export default function InicioAdmin({ navigation }) {
   const cambiarEstadoTrabajador = async (trabajadorId, estadoActual, coleccion) => {
     try {
       const nuevoEstado = !estadoActual;
-      
-      // Actualizar en Firebase
-      const trabajadorRef = doc(db, coleccion || 'usuarios', trabajadorId);
+
+      // Usar la colección correcta (por defecto 'Usuario')
+      const trabajadorRef = doc(db, coleccion || 'Usuario', trabajadorId);
       await updateDoc(trabajadorRef, {
         habilitado: nuevoEstado
       });
 
-      // Actualizar estado local
       setTrabajadores(prevTrabajadores =>
         prevTrabajadores.map(t =>
           t.id === trabajadorId ? { ...t, habilitado: nuevoEstado } : t
@@ -148,14 +148,12 @@ export default function InicioAdmin({ navigation }) {
   const cambiarEstadoEquipo = async (equipoId, estadoActual) => {
     try {
       const nuevoEstado = !estadoActual;
-      
-      // Actualizar en Firebase
+
       const equipoRef = doc(db, 'equipos', equipoId);
       await updateDoc(equipoRef, {
         disponible: nuevoEstado
       });
 
-      // Actualizar estado local
       setEquipos(prevEquipos =>
         prevEquipos.map(e =>
           e.id === equipoId ? { ...e, disponible: nuevoEstado } : e
@@ -215,7 +213,7 @@ export default function InicioAdmin({ navigation }) {
         {estaExpandido && (
           <View style={styles.cardBody}>
             <View style={styles.separador} />
-            
+
             <View style={styles.infoFila}>
               <Ionicons name="mail-outline" size={18} color="#666" />
               <Text style={styles.infoTexto}>
@@ -226,10 +224,10 @@ export default function InicioAdmin({ navigation }) {
             <View style={styles.estadoContainer}>
               <View style={styles.estadoFila}>
                 <View style={styles.estadoInfo}>
-                  <Ionicons 
-                    name={habilitado ? "checkmark-circle" : "close-circle"} 
-                    size={20} 
-                    color={habilitado ? '#27ae60' : '#e74c3c'} 
+                  <Ionicons
+                    name={habilitado ? "checkmark-circle" : "close-circle"}
+                    size={20}
+                    color={habilitado ? '#27ae60' : '#e74c3c'}
                   />
                   <Text style={[
                     styles.estadoTexto,
@@ -238,21 +236,21 @@ export default function InicioAdmin({ navigation }) {
                     {habilitado ? 'Habilitado' : 'Deshabilitado'}
                   </Text>
                 </View>
-                
+
                 <Switch
                   value={habilitado}
                   onValueChange={() => cambiarEstadoTrabajador(
-                    item.id, 
+                    item.id,
                     habilitado,
-                    item.coleccion || 'usuarios'
+                    item.coleccion || 'Usuario'
                   )}
                   trackColor={{ false: '#e0e0e0', true: COLORES.primario + '80' }}
                   thumbColor={habilitado ? COLORES.primario : '#999'}
                 />
               </View>
-              
+
               <Text style={styles.estadoDescripcion}>
-                {habilitado 
+                {habilitado
                   ? 'El trabajador puede iniciar sesión y realizar mantenimientos'
                   : 'El trabajador no puede acceder al sistema'
                 }
@@ -286,10 +284,10 @@ export default function InicioAdmin({ navigation }) {
 
           <View style={{ flex: 1 }}>
             <Text style={styles.nombre}>
-              {item.nombre || item.tipo || 'Sin nombre'}
+              {item.nombre || item.equipo || item.tipo || 'Sin nombre'}
             </Text>
             <Text style={styles.rut}>
-              Código: {item.codigo || item.id || 'Sin código'}
+              Código: {item.codigo || item.codigo_sgs || item.id || 'Sin código'}
             </Text>
           </View>
 
@@ -303,13 +301,6 @@ export default function InicioAdmin({ navigation }) {
         {estaExpandido && (
           <View style={styles.cardBody}>
             <View style={styles.separador} />
-            
-            {item.tipo && (
-              <View style={styles.infoFila}>
-                <Ionicons name="pricetag-outline" size={18} color="#666" />
-                <Text style={styles.infoTexto}>{item.tipo}</Text>
-              </View>
-            )}
 
             {(item.marca || item.modelo) && (
               <View style={styles.infoFila}>
@@ -320,13 +311,22 @@ export default function InicioAdmin({ navigation }) {
               </View>
             )}
 
+            {item.numero_serie && (
+              <View style={styles.infoFila}>
+                <Ionicons name="barcode-outline" size={18} color="#666" />
+                <Text style={styles.infoTexto}>
+                  Serie: {item.numero_serie}
+                </Text>
+              </View>
+            )}
+
             <View style={styles.estadoContainer}>
               <View style={styles.estadoFila}>
                 <View style={styles.estadoInfo}>
-                  <Ionicons 
-                    name={disponible ? "checkmark-circle" : "close-circle"} 
-                    size={20} 
-                    color={disponible ? '#27ae60' : '#e74c3c'} 
+                  <Ionicons
+                    name={disponible ? "checkmark-circle" : "close-circle"}
+                    size={20}
+                    color={disponible ? '#27ae60' : '#e74c3c'}
                   />
                   <Text style={[
                     styles.estadoTexto,
@@ -335,7 +335,7 @@ export default function InicioAdmin({ navigation }) {
                     {disponible ? 'Disponible' : 'No disponible'}
                   </Text>
                 </View>
-                
+
                 <Switch
                   value={disponible}
                   onValueChange={() => cambiarEstadoEquipo(item.id, disponible)}
@@ -343,9 +343,9 @@ export default function InicioAdmin({ navigation }) {
                   thumbColor={disponible ? COLORES.primario : '#999'}
                 />
               </View>
-              
+
               <Text style={styles.estadoDescripcion}>
-                {disponible 
+                {disponible
                   ? 'El equipo está disponible para asignar a mantenimientos'
                   : 'El equipo no está disponible para uso'
                 }
@@ -380,8 +380,8 @@ export default function InicioAdmin({ navigation }) {
             <Text style={styles.headerTitulo}>Panel Administrativo</Text>
             <Text style={styles.headerSubtitulo}>Bienvenido, {nombreAdmin}</Text>
           </View>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             onPress={() => navigation.navigate('PerfilAdmin')}
             style={styles.botonPerfil}
           >
@@ -401,10 +401,10 @@ export default function InicioAdmin({ navigation }) {
               setExpandido(null);
             }}
           >
-            <Ionicons 
-              name="people" 
-              size={20} 
-              color={vistaActual === 'trabajadores' ? COLORES.primario : '#666'} 
+            <Ionicons
+              name="people"
+              size={20}
+              color={vistaActual === 'trabajadores' ? COLORES.primario : '#666'}
             />
             <Text style={[
               styles.textoPestana,
@@ -424,10 +424,10 @@ export default function InicioAdmin({ navigation }) {
               setExpandido(null);
             }}
           >
-            <Ionicons 
-              name="construct" 
-              size={20} 
-              color={vistaActual === 'equipos' ? COLORES.primario : '#666'} 
+            <Ionicons
+              name="construct"
+              size={20}
+              color={vistaActual === 'equipos' ? COLORES.primario : '#666'}
             />
             <Text style={[
               styles.textoPestana,
@@ -446,14 +446,14 @@ export default function InicioAdmin({ navigation }) {
           contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
           ListEmptyComponent={
             <View style={styles.contenedorVacio}>
-              <Ionicons 
-                name={vistaActual === 'trabajadores' ? "people-outline" : "construct-outline"} 
-                size={64} 
-                color="#ccc" 
+              <Ionicons
+                name={vistaActual === 'trabajadores' ? "people-outline" : "construct-outline"}
+                size={64}
+                color="#ccc"
               />
               <Text style={styles.textoVacio}>
-                {vistaActual === 'trabajadores' 
-                  ? 'No hay trabajadores registrados' 
+                {vistaActual === 'trabajadores'
+                  ? 'No hay trabajadores registrados'
                   : 'No hay equipos registrados'
                 }
               </Text>
@@ -464,7 +464,7 @@ export default function InicioAdmin({ navigation }) {
           }
         />
 
-        {/* ✅ Botón flotante SIN callbacks */}
+        {/* Botón flotante */}
         <TouchableOpacity
           style={styles.botonFlotante}
           onPress={() => {
@@ -482,7 +482,6 @@ export default function InicioAdmin({ navigation }) {
   );
 }
 
-// ✅ Estilos locales mínimos (lo que no está en estilosComunes)
 const styles = StyleSheet.create({
   contenedorCentrado: {
     flex: 1,

@@ -64,7 +64,7 @@ export default function InformeCorrectivo({ route, navigation }) {
 
       console.log('🔍 Buscando documento en Usuario con ID:', usuario.uid);
       
-      const { doc, getDoc } = await import('firebase/firestore');
+      // ✅ CORRECCIÓN: Eliminar el await import() ya que los imports están al inicio
       const docRef = doc(db, 'Usuario', usuario.uid);
       const docSnap = await getDoc(docRef);
       

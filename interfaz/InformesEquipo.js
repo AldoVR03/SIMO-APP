@@ -7,127 +7,139 @@ import {
   ActivityIndicator,
   SafeAreaView,
 } from 'react-native';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+// 1. Importamos onSnapshot para tiempo real
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../servicio/firebase-config';
+// 2. Importamos la función para leer lo que está pendiente en el celular
+import { obtenerMantenimientosOffline } from '../servicio/offline-storage';
 import estilosComunes, { COLORES } from '../assets/estilos';
 
 export default function InformesDelEquipo({ route, navigation }) {
 
   const { equipoId, equipoNombre, equipo } = route.params;
-  
+
   const idEquipo = equipo ? equipo.id : equipoId;
   const nombreEquipo = equipo ? equipo.equipo : equipoNombre;
   const codigoSGS = equipo ? equipo.codigo_sgs : equipoId;
-  
+
+  // Estados separados para mezclar fuentes de datos
+  const [listaPreventivos, setListaPreventivos] = useState([]);
+  const [listaCorrectivos, setListaCorrectivos] = useState([]);
+  const [listaOffline, setListaOffline] = useState([]);
+
   const [informes, setInformes] = useState([]);
   const [cargando, setCargando] = useState(true);
 
+  // EFECTO 1: Cargar datos Offline y suscribirse a Firestore
   useEffect(() => {
-    obtenerInformes();
+    setCargando(true);
+
+    // A) CARGAR DATOS OFFLINE (Lo que está pendiente de subir)
+    const cargarOffline = async () => {
+      try {
+        const pendientes = await obtenerMantenimientosOffline();
+        // Filtramos solo los que pertenecen a este equipo
+        const misPendientes = pendientes.filter(m =>
+          m.equipo_id === idEquipo ||
+          (m.informe && m.informe.id_interno === idEquipo)
+        ).map(m => ({
+          ...m,
+          // Asignamos una ID temporal y datos para que no rompa la lista
+          id: m.mantenimientoId || `temp-${Date.now()}`,
+          tipo: m.tipo || 'Pendiente',
+          fecha: m.timestamp_offline || new Date(),
+          esLocal: true, // Bandera para pintarlo diferente
+          usuario: 'Tú (Sincronizando...)'
+        }));
+        setListaOffline(misPendientes);
+      } catch (e) {
+        console.error("Error cargando offline:", e);
+      }
+    };
+    cargarOffline();
+
+    // B) SUSCRIPCIÓN PREVENTIVOS (Tiempo Real)
+    const qPrev = query(
+      collection(db, "informePreventivo"),
+      where("id_interno", "==", idEquipo)
+    );
+
+    const unsubscribePrev = onSnapshot(qPrev, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        tipo: 'Preventivo',
+        ...doc.data()
+      }));
+      setListaPreventivos(data);
+    }, (error) => console.log("Error preventivos:", error));
+
+    // C) SUSCRIPCIÓN CORRECTIVOS (Tiempo Real)
+    const qCorr = query(
+      collection(db, "informeCorrectivo"),
+      where("id_interno", "==", idEquipo)
+    );
+
+    const unsubscribeCorr = onSnapshot(qCorr, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        tipo: 'Correctivo',
+        ...doc.data()
+      }));
+      setListaCorrectivos(data);
+    }, (error) => console.log("Error correctivos (puede estar vacía):", error));
+
+    // Limpieza al salir de la pantalla
+    return () => {
+      unsubscribePrev();
+      unsubscribeCorr();
+    };
   }, [idEquipo]);
 
-  const obtenerInformes = async () => {
-    try {
-      setCargando(true);
+  // EFECTO 2: Unificar y Ordenar listas cada vez que cambie alguna fuente
+  useEffect(() => {
+    // Unimos todo: Offline + Preventivos + Correctivos
+    let consolidado = [...listaOffline, ...listaPreventivos, ...listaCorrectivos];
 
-      const q = query(
-        collection(db, "informePreventivo"),
-        where("id_interno", "==", idEquipo)
-      );
+    // Ordenamos por fecha (más reciente primero)
+    consolidado.sort((a, b) => {
+      const fechaA = obtenerFechaObjeto(a.fecha);
+      const fechaB = obtenerFechaObjeto(b.fecha);
+      return fechaB - fechaA;
+    });
 
-      const snapshot = await getDocs(q);
-      console.log('📊 Informes preventivos encontrados:', snapshot.size);
-      
-      let listaInformes = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          fecha: data.fecha
-        };
-      });
+    setInformes(consolidado);
+    setCargando(false);
+  }, [listaOffline, listaPreventivos, listaCorrectivos]);
 
-      listaInformes.sort((a, b) => {
-        const fechaA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha);
-        const fechaB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha);
-        return fechaB - fechaA;
-      });
-
-      try {
-        const qCorrectivo = query(
-          collection(db, "informeCorrectivo"),
-          where("id_interno", "==", idEquipo)
-        );
-        const snapshotCorrectivo = await getDocs(qCorrectivo);
-        console.log('📊 Informes correctivos encontrados:', snapshotCorrectivo.size);
-        
-        const correctivos = snapshotCorrectivo.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            tipo: 'Correctivo',
-            ...data
-          };
-        });
-
-        listaInformes = listaInformes.map(inf => ({ ...inf, tipo: 'Preventivo' }));
-
-        listaInformes = [...listaInformes, ...correctivos];
-
-        listaInformes.sort((a, b) => {
-          const fechaA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha);
-          const fechaB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha);
-          return fechaB - fechaA;
-        });
-      } catch (errorCorrectivo) {
-        console.log('⚠️ No hay colección de informes correctivos o error:', errorCorrectivo.message);
-      }
-
-      setInformes(listaInformes);
-      console.log('✅ Total de informes cargados:', listaInformes.length);
-      
-    } catch (error) {
-      console.error("❌ Error al obtener informes:", error);
-      
-      if (error.code === 'failed-precondition') {
-        console.log('⚠️ Necesitas crear un índice en Firebase');
-        console.log('⚠️ Campo: id_interno');
-      }
-    } finally {
-      setCargando(false);
-    }
+  // Función auxiliar para manejar fechas de Firestore (Timestamp) y Strings
+  const obtenerFechaObjeto = (fecha) => {
+    if (!fecha) return new Date(0);
+    if (fecha.toDate) return fecha.toDate(); // Es Timestamp de Firestore
+    return new Date(fecha); // Es String o Date JS
   };
 
   const formatearFecha = (fecha) => {
-    if (fecha?.toDate) {
-      return fecha.toDate().toLocaleDateString('es-CL', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    }
-    if (typeof fecha === 'string') {
-      return new Date(fecha).toLocaleDateString('es-CL', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    }
-    return 'Fecha no disponible';
+    const dateObj = obtenerFechaObjeto(fecha);
+    return dateObj.toLocaleDateString('es-CL', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
   };
 
-  const obtenerColorTipo = (tipo) => {
-    if (tipo === 'Correctivo') return '#e67e22';
+  const obtenerColorTipo = (item) => {
+    if (item.esLocal) return '#f1c40f'; // Amarillo para pendientes offline
+    if (item.tipo === 'Correctivo') return '#e67e22';
     return '#3498db';
   };
 
-  if (cargando) {
+  if (cargando && informes.length === 0) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
         <View style={[estilosComunes.contenedor, { justifyContent: 'center' }]}>
           <ActivityIndicator size="large" color={COLORES.primario} />
           <Text style={{ marginTop: 10, color: COLORES.texto, textAlign: 'center' }}>
-            Cargando informes...
+            Cargando historial...
           </Text>
         </View>
       </SafeAreaView>
@@ -138,7 +150,7 @@ export default function InformesDelEquipo({ route, navigation }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORES.fondo }}>
       <View style={{ flex: 1 }}>
         <View style={estilosComunes.encabezado}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={{ padding: 8 }}
           >
@@ -146,7 +158,7 @@ export default function InformesDelEquipo({ route, navigation }) {
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
         </View>
-        
+
         <View style={{ paddingHorizontal: 24, marginBottom: 20, alignItems: 'center' }}>
           <Text style={[estilosComunes.titulo, { textAlign: 'center' }]}>
             {nombreEquipo}
@@ -161,27 +173,24 @@ export default function InformesDelEquipo({ route, navigation }) {
 
         {informes.length === 0 ? (
           <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 24 }}>
-            
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
               <Text style={{ fontSize: 16, color: '#666', textAlign: 'center' }}>
                 No hay informes registrados{'\n'}para este equipo
               </Text>
             </View>
-
+            {/* Botón para crear nuevo */}
             <View style={{ paddingBottom: 20 }}>
               <TouchableOpacity
                 style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
                 onPress={() =>
-                  navigation.navigate('InformeCorrectivo', { 
+                  navigation.navigate('InformeCorrectivo', {
                     equipoId: idEquipo,
                     equipoNombre: nombreEquipo,
                     equipo: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS }
                   })
                 }
               >
-                <Text style={estilosComunes.textoBoton}>
-                  + Crear informe correctivo
-                </Text>
+                <Text style={estilosComunes.textoBoton}>+ Crear informe correctivo</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -194,20 +203,22 @@ export default function InformesDelEquipo({ route, navigation }) {
               <TouchableOpacity
                 style={[
                   estilosComunes.tarjetaInforme,
-                  { 
+                  {
                     backgroundColor: '#fff',
                     borderWidth: 2,
-                    borderColor: obtenerColorTipo(item.tipo || 'Preventivo')
+                    // Si es local, borde amarillo, si no, su color normal
+                    borderColor: obtenerColorTipo(item)
                   }
                 ]}
                 onPress={() => {
+                  if (item.esLocal) {
+                    alert("Este informe está pendiente de sincronización.");
+                    return;
+                  }
                   const esCorrectivo = item.tipo === 'Correctivo';
                   navigation.navigate(
                     esCorrectivo ? 'VerInformeCorrectivo' : 'VerInformePreventivo',
-                    {
-                      informeId: item.id,
-                      informe: item
-                    }
+                    { informeId: item.id, informe: item }
                   );
                 }}
               >
@@ -215,47 +226,38 @@ export default function InformesDelEquipo({ route, navigation }) {
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                       <View style={{
-                        backgroundColor: obtenerColorTipo(item.tipo || 'Preventivo'),
+                        backgroundColor: obtenerColorTipo(item),
                         paddingHorizontal: 10,
                         paddingVertical: 4,
                         borderRadius: 12,
                         marginRight: 10
                       }}>
                         <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>
-                          {item.tipo || 'Preventivo'}
+                          {item.esLocal ? 'PENDIENTE' : (item.tipo || 'Preventivo')}
                         </Text>
                       </View>
                       <Text style={[estilosComunes.tituloTarjeta, { fontSize: 15, flex: 1 }]}>
                         Informe {item.tipo || 'Preventivo'}
                       </Text>
                     </View>
-                    
+
                     <Text style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
                       📅 {formatearFecha(item.fecha)}
                     </Text>
+
                     {item.usuario && (
                       <Text style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
                         👤 {item.usuario}
                       </Text>
                     )}
-                    {item.tecnico && (
-                      <Text style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
-                        👤 {item.tecnico}
-                      </Text>
-                    )}
-                    {item.responsable && (
-                      <Text style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
-                        👤 {item.responsable}
-                      </Text>
-                    )}
                   </View>
-                  
+
                   <View style={[
                     estilosComunes.tarjetaEstado,
-                    { backgroundColor: COLORES.primario }
+                    { backgroundColor: item.esLocal ? '#f1c40f' : COLORES.primario }
                   ]}>
                     <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>
-                      Ver
+                      {item.esLocal ? 'Sync...' : 'Ver'}
                     </Text>
                   </View>
                 </View>
@@ -266,16 +268,14 @@ export default function InformesDelEquipo({ route, navigation }) {
                 <TouchableOpacity
                   style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
                   onPress={() =>
-                    navigation.navigate('InformeCorrectivo', { 
+                    navigation.navigate('InformeCorrectivo', {
                       equipoId: idEquipo,
                       equipoNombre: nombreEquipo,
                       equipo: equipo || { id: idEquipo, equipo: nombreEquipo, codigo_sgs: codigoSGS }
                     })
                   }
                 >
-                  <Text style={estilosComunes.textoBoton}>
-                    + Crear informe correctivo
-                  </Text>
+                  <Text style={estilosComunes.textoBoton}>+ Crear informe correctivo</Text>
                 </TouchableOpacity>
               </View>
             }
