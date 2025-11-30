@@ -68,7 +68,7 @@ export default function InicioAdmin({ navigation }) {
       // Buscar en colección "Usuario" (con mayúscula, como está en Firebase)
       const q = query(
         collection(db, 'Usuario'),
-        where('rol', '==', 'mantenedor')
+        where('rol', 'in', ['mantenedor', 'supervisor', 'crl_calidad'])
       );
 
       const snapshot = await getDocs(q);
@@ -82,7 +82,7 @@ export default function InicioAdmin({ navigation }) {
       if (listaTrabajadores.length === 0) {
         const qAlt = query(
           collection(db, 'usuarios'),
-          where('rol', '==', 'mantenedor')
+          where('rol', 'in', ['mantenedor', 'supervisor', 'crl_calidad'])
         );
         const snapshotAlt = await getDocs(qAlt);
         const listaTrabajadoresAlt = snapshotAlt.docs.map(doc => ({
@@ -218,6 +218,13 @@ export default function InicioAdmin({ navigation }) {
               <Ionicons name="mail-outline" size={18} color="#666" />
               <Text style={styles.infoTexto}>
                 {item.correo || item.email || item.Correo || 'Sin correo'}
+              </Text>
+            </View>
+
+            <View style={styles.infoFila}>
+              <Ionicons name="briefcase-outline" size={18} color="#666" />
+              <Text style={styles.infoTexto}>
+                Rol: {item.rol ? item.rol.charAt(0).toUpperCase() + item.rol.slice(1).replace('_', ' ') : 'Sin rol'}
               </Text>
             </View>
 
@@ -544,6 +551,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: '#666',
+    marginBottom: 4,
   },
   textoPestanaActiva: {
     color: COLORES.primario,

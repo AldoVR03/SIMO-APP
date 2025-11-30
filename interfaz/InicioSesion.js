@@ -53,8 +53,14 @@ export default function InicioSesion({ navigation }) {
               case 'mantenedor':
                 navigation.replace('InicioMantenedor', { usuario: userData.nombre });
                 break;
+              case 'supervisor':
+                navigation.replace('InicioSupervisor', { usuario: userData.nombre });
+                break;
+              case 'crl_calidad':
+                navigation.replace('Iniciocalidad', { usuario: userData.nombre });
+                break;
               default:
-                console.log("El rol del usuario no es 'admin' o 'mantenedor'.");
+                console.log("El rol del usuario no es 'admin', 'mantenedor', 'supervisor' o 'crl_calidad'.");
                 await signOut(auth);
                 Alert.alert(
                   'Error de acceso',

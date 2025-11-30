@@ -24,6 +24,15 @@ export default function AgregarTrabajador({ navigation }) {
   const [contrasena, setContrasena] = useState('');
   const [cargando, setCargando] = useState(false);
   const [mostrarContrasena, setMostrarContrasena] = useState(false);
+  const [rol, setRol] = useState('mantenedor');
+  const [mostrarMenuRoles, setMostrarMenuRoles] = useState(false);
+
+  const rolesDisponibles = [
+    { label: 'Admin', value: 'admin' },
+    { label: 'Mantenedor', value: 'mantenedor' },
+    { label: 'Supervisor', value: 'supervisor' },
+    { label: 'Crl de calidad de Codelco', value: 'crl_calidad' },
+  ];
 
   const validarRut = (rut) => {
     const rutLimpio = rut.replace(/\./g, '').replace(/-/g, '');
@@ -88,6 +97,7 @@ export default function AgregarTrabajador({ navigation }) {
     setRut('');
     setCorreo('');
     setContrasena('');
+    setRol('mantenedor');
   };
 
   const handleAgregarTrabajador = async () => {
@@ -143,7 +153,7 @@ export default function AgregarTrabajador({ navigation }) {
         nombre: nombre.trim(),
         rut: rut.trim(),
         correo: correo.trim().toLowerCase(),
-        rol: 'mantenedor',
+        rol: rol,
         habilitado: true,
         primerIngreso: true,
         fechaCreacion: new Date().toISOString(),
@@ -158,7 +168,8 @@ export default function AgregarTrabajador({ navigation }) {
         '✅ Trabajador Creado',
         `${nombre} ha sido registrado exitosamente.\n\n` +
         `📧 Correo: ${correo}\n` +
-        `🔐 Contraseña: ${contrasena}\n\n` +
+        `🔐 Contraseña: ${contrasena}\n` +
+        `💼 Rol: ${rolesDisponibles.find(r => r.value === rol)?.label}\n\n` +
         `Guarda estas credenciales para compartirlas con el trabajador.`,
         [
           {
@@ -296,6 +307,78 @@ export default function AgregarTrabajador({ navigation }) {
                   autoCapitalize="none"
                 />
               </View>
+            </View>
+
+            {/* Selector de Rol */}
+            <View style={{ marginBottom: 20, zIndex: 1000 }}>
+              <Text style={estilosComunes.etiqueta}>Rol *</Text>
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: COLORES.fondo,
+                  borderRadius: 8,
+                  paddingHorizontal: 12,
+                  paddingVertical: 14,
+                  borderWidth: 1,
+                  borderColor: '#e0e0e0',
+                }}
+                onPress={() => setMostrarMenuRoles(!mostrarMenuRoles)}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Ionicons name="briefcase-outline" size={20} color="#666" />
+                  <Text style={{ marginLeft: 10, fontSize: 15, color: COLORES.texto }}>
+                    {rolesDisponibles.find(r => r.value === rol)?.label || 'Seleccionar rol'}
+                  </Text>
+                </View>
+                <Ionicons name={mostrarMenuRoles ? "chevron-up" : "chevron-down"} size={20} color="#666" />
+              </TouchableOpacity>
+
+              {mostrarMenuRoles && (
+                <View style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  backgroundColor: '#fff',
+                  borderRadius: 8,
+                  marginTop: 4,
+                  borderWidth: 1,
+                  borderColor: '#e0e0e0',
+                  elevation: 5,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                  zIndex: 1000,
+                }}>
+                  {rolesDisponibles.map((item) => (
+                    <TouchableOpacity
+                      key={item.value}
+                      style={{
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        borderBottomWidth: 1,
+                        borderBottomColor: '#f0f0f0',
+                        backgroundColor: rol === item.value ? '#f0f9ff' : '#fff'
+                      }}
+                      onPress={() => {
+                        setRol(item.value);
+                        setMostrarMenuRoles(false);
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 15,
+                        color: rol === item.value ? COLORES.primario : COLORES.texto,
+                        fontWeight: rol === item.value ? '600' : '400'
+                      }}>
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
 
             {/* Contraseña */}

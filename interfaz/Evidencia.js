@@ -11,8 +11,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import estilosComunes, { COLORES } from '../assets/estilos';
-import { procesarImagenOffline } from '../servicio/sync-service';
 import { useConexionInternet } from '../servicio/network-service';
+
+// Usar Firebase Storage en lugar de Cloudinary
+import { procesarImagenParaStorage } from '../servicio/Storageservice';
 
 export default function Evidencia({ navigation, route }) {
   console.log("Datos recibidos en Evidencia:", route.params);
@@ -57,10 +59,8 @@ export default function Evidencia({ navigation, route }) {
 
       console.log('📸 Procesando imagen:', archivo.uri);
 
-      // Procesar imagen (subirá a Cloudinary si hay conexión, o guardará localmente)
-      // procesarImagenOffline maneja internamente la lógica de conexión, pero
-      // el hook useConexionInternet nos da el estado para la UI
-      const imagenProcesada = await procesarImagenOffline(archivo.uri);
+      // Procesar imagen con Firebase Storage
+      const imagenProcesada = await procesarImagenParaStorage(archivo.uri);
 
       if (imagenProcesada && imagenProcesada.url) {
         setImagenes([...imagenes, {
@@ -69,10 +69,10 @@ export default function Evidencia({ navigation, route }) {
         }]);
 
         if (imagenProcesada.tipo === 'cloud') {
-          Alert.alert('✅ Éxito', 'Imagen subida a la nube correctamente');
+          Alert.alert('✅ Éxito', 'Imagen subida a Firebase Storage correctamente');
         } else {
           Alert.alert(
-            '📴 Modo Offline',
+            '🔴 Modo Offline',
             'Imagen guardada localmente. Se subirá automáticamente cuando haya conexión.',
             [{ text: 'Entendido' }]
           );
@@ -166,7 +166,7 @@ export default function Evidencia({ navigation, route }) {
           fontWeight: 'bold',
           fontSize: 12,
         }}>
-          {estaConectado ? 'Conectado' : 'Modo Offline'}
+          {estaConectado ? 'Conectado - Firebase Storage' : 'Modo Offline'}
         </Text>
       </View>
 
@@ -229,7 +229,7 @@ export default function Evidencia({ navigation, route }) {
                   }}
                 >
                   <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>
-                    {imagenes[i].tipo === 'cloud' ? '☁️ Nube' : '📱 Local'}
+                    {imagenes[i].tipo === 'cloud' ? '☁️ Storage' : '📱 Local'}
                   </Text>
                 </View>
                 {/* Botón eliminar */}
@@ -288,7 +288,7 @@ export default function Evidencia({ navigation, route }) {
             color: COLORES.primario,
             fontWeight: 'bold'
           }}>
-            {estaConectado ? 'Subiendo imagen a la nube...' : 'Guardando imagen localmente...'}
+            {estaConectado ? 'Subiendo a Firebase Storage...' : 'Guardando imagen localmente...'}
           </Text>
         </View>
       )}
@@ -319,19 +319,20 @@ export default function Evidencia({ navigation, route }) {
       )}
 
       {/* Botón continuar */}
-      <TouchableOpacity
-        style={[
-          estilosComunes.boton,
-          { marginTop: 'auto', marginBottom: 20, marginHorizontal: 20 },
-          (imagenes.length === 0 || cargando) && { backgroundColor: '#ccc' }
-        ]}
-        onPress={navegarAFirma}
-        disabled={imagenes.length === 0 || cargando}
-      >
-        <Text style={estilosComunes.textoBoton}>
-          {cargando ? 'Procesando...' : 'Continuar a Firmas'}
-        </Text>
-      </TouchableOpacity>
+      <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+        <TouchableOpacity
+          style={[
+            estilosComunes.boton,
+            (imagenes.length === 0 || cargando) && { backgroundColor: '#ccc' }
+          ]}
+          onPress={navegarAFirma}
+          disabled={imagenes.length === 0 || cargando}
+        >
+          <Text style={estilosComunes.textoBoton}>
+            {cargando ? 'Procesando...' : 'Continuar a Firmas'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }

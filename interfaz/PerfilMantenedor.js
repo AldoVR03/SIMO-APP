@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   View, 
   Text, 
-  TextInput, 
   TouchableOpacity,
   ActivityIndicator, 
   Alert,
@@ -14,7 +13,7 @@ import estilosComunes, { COLORES } from '../assets/estilos';
 
 import { auth } from '../servicio/firebase-config';
 import { db } from '../servicio/firebase-config';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 
 export default function PerfilMantenedor({ navigation }) {
@@ -29,7 +28,6 @@ export default function PerfilMantenedor({ navigation }) {
           const docRef = doc(db, "usuarios", user.uid);
           let docSnap = await getDoc(docRef);
 
-          // Si no existe en "usuarios", intentar con "Usuario"
           if (!docSnap.exists()) {
             const docRefAlt = doc(db, "Usuario", user.uid);
             docSnap = await getDoc(docRefAlt);
@@ -56,15 +54,56 @@ export default function PerfilMantenedor({ navigation }) {
     fetchUserData();
   }, []);
 
+  // Callback cuando se completa la verificación
+  const handleVerificacionCompleta = async (datosVerificacion) => {
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        const docRef = doc(db, "Usuario", user.uid);
+        
+        // Actualizar datos de verificación en Firebase
+        await updateDoc(docRef, {
+          verificacion: {
+            estado: 'verificado',
+            fechaVerificacion: new Date(),
+            // IMPORTANTE: Ahora guardamos datos reales, no simulados
+            metodo: 'local_option_b', // Para trazabilidad en el informe
+            consistenciaFirma: datosVerificacion.datosVerificacion.consistencia,
+            datosManuales: datosVerificacion.datosExtraidos // RUT y Nombre validados visualmente
+          }
+        });
+
+        // Actualizar estado local
+        setUserData(prev => ({
+          ...prev,
+          verificacion: {
+            estado: 'verificado',
+            fechaVerificacion: new Date(),
+            umbralSimilitud: datosVerificacion.datosVerificacion.umbral,
+          }
+        }));
+        
+        console.log('✅ Verificación guardada correctamente');
+      }
+    } catch (error) {
+      console.error("Error al guardar verificación:", error);
+      Alert.alert('Error', 'No se pudo guardar la verificación. Intenta nuevamente.');
+    }
+  };
+
+  const navegarVerificacion = () => {
+    navigation.navigate('VerificacionIdentidad', {
+      userData,
+      onVerificacionCompleta: handleVerificacionCompleta,
+    });
+  };
+
   const CerrarSesion = () => {
     Alert.alert(
       "Cerrar Sesión",
       "¿Estás seguro que deseas cerrar sesión?",
       [
-        {
-          text: "Cancelar",
-          style: "cancel"
-        },
+        { text: "Cancelar", style: "cancel" },
         {
           text: "Cerrar Sesión",
           onPress: async () => {
@@ -84,6 +123,10 @@ export default function PerfilMantenedor({ navigation }) {
       ]
     );
   };
+
+  // Determinar estado de verificación
+  const estadoVerificacion = userData?.verificacion?.estado || 'pendiente';
+  const estaVerificado = estadoVerificacion === 'verificado';
 
   if (cargando) {
     return (
@@ -112,6 +155,7 @@ export default function PerfilMantenedor({ navigation }) {
           style={{ flex: 1 }} 
           contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
         >
+          {/* Header del perfil */}
           <View style={{
             backgroundColor: COLORES.primario,
             padding: 20,
@@ -146,9 +190,135 @@ export default function PerfilMantenedor({ navigation }) {
             }}>
               Mantenedor
             </Text>
+
+            {/* Badge de verificación */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: estaVerificado ? 'rgba(40, 167, 69, 0.2)' : 'rgba(255, 193, 7, 0.2)',
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 20,
+              marginTop: 12,
+            }}>
+              <Ionicons 
+                name={estaVerificado ? "shield-checkmark" : "warning"} 
+                size={16} 
+                color={estaVerificado ? "#90EE90" : "#FFD700"} 
+              />
+              <Text style={{
+                color: estaVerificado ? "#90EE90" : "#FFD700",
+                fontSize: 12,
+                fontWeight: '600',
+                marginLeft: 6,
+              }}>
+                {estaVerificado ? "Identidad Verificada" : "Verificación Pendiente"}
+              </Text>
+            </View>
           </View>
 
-          {/* Sección de información */}
+          {/* NUEVA SECCIÓN: Verificación de Identidad */}
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 16,
+            elevation: 2,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.1,
+            shadowRadius: 2,
+            borderWidth: estaVerificado ? 1 : 2,
+            borderColor: estaVerificado ? '#e0e0e0' : COLORES.primario,
+          }}>
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: 12,
+            }}>
+              <Ionicons 
+                name="finger-print" 
+                size={24} 
+                color={COLORES.primario} 
+                style={{ marginRight: 10 }} 
+              />
+              <Text style={{
+                fontSize: 16,
+                fontWeight: 'bold',
+                color: COLORES.texto,
+              }}>
+                Verificación de Identidad
+              </Text>
+            </View>
+
+            {estaVerificado ? (
+              // Estado: Verificado
+              <View>
+                <View style={{
+                  backgroundColor: '#d4edda',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="checkmark-circle" size={20} color="#28a745" />
+                    <Text style={{ color: '#155724', fontWeight: '600', marginLeft: 8 }}>
+                      Tu identidad está verificada
+                    </Text>
+                  </View>
+                  <Text style={{ color: '#155724', fontSize: 12, marginTop: 6 }}>
+                    Umbral de similitud: {userData?.verificacion?.umbralSimilitud || 72}%
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingVertical: 10,
+                  }}
+                  onPress={navegarVerificacion}
+                >
+                  <Ionicons name="refresh" size={18} color={COLORES.primario} />
+                  <Text style={{ color: COLORES.primario, marginLeft: 6, fontSize: 14 }}>
+                    Volver a verificar
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              // Estado: Pendiente
+              <View>
+                <Text style={{
+                  fontSize: 14,
+                  color: '#666',
+                  marginBottom: 16,
+                  lineHeight: 20,
+                }}>
+                  Para firmar informes correctivos y preventivos, debes verificar tu identidad subiendo tu carnet y calibrando tu firma.
+                </Text>
+
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: COLORES.primario,
+                    padding: 14,
+                    borderRadius: 8,
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                  onPress={navegarVerificacion}
+                >
+                  <Ionicons name="camera" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>
+                    Verificar Ahora
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Sección de información personal */}
           <View style={{
             backgroundColor: '#fff',
             borderRadius: 12,
@@ -160,6 +330,18 @@ export default function PerfilMantenedor({ navigation }) {
             shadowOpacity: 0.1,
             shadowRadius: 2,
           }}>
+            <Text style={{
+              fontSize: 14,
+              fontWeight: '600',
+              color: '#666',
+              marginBottom: 16,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}>
+              Información Personal
+            </Text>
+
+            {/* Nombre */}
             <View style={{ marginBottom: 16 }}>
               <Text style={estilosComunes.etiqueta}>Nombre Completo</Text>
               <View style={{
@@ -199,6 +381,7 @@ export default function PerfilMantenedor({ navigation }) {
               </View>
             </View>
 
+            {/* Contraseña */}
             <View style={{ marginBottom: 16 }}>
               <Text style={estilosComunes.etiqueta}>Contraseña</Text>
               <View style={{
@@ -253,6 +436,7 @@ export default function PerfilMantenedor({ navigation }) {
           </View>
         </ScrollView>
 
+        {/* Botón Cerrar Sesión */}
         <View style={{
           position: 'absolute',
           bottom: 0,

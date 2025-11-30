@@ -8,11 +8,15 @@ import {
   TextInput,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../assets/estilos';
 import { auth, db } from '../servicio/firebase-config';
 import { doc, getDoc } from 'firebase/firestore';
+
+// Importar servicio de validación de firmas
+import { validarFirmaInforme } from '../servicio/verificacionService';
 
 const SignatureCanvas =
   Platform.OS !== 'web'
@@ -29,49 +33,47 @@ export default function Firma({ navigation, route }) {
     mantenimientoId,
   } = route?.params || {};
 
-  const [firmas, setFirmas] = useState({
-    firma_mantenedor: null,
-    firma_supervisor: null,
-    firma_a_calidad_dgm: null,
-  });
+  // Solo firma del mantenedor
+  const [firma, setFirma] = useState(null);
+  const [nombreMantenedor, setNombreMantenedor] = useState('');
 
-  const [nombres, setNombres] = useState({
-    nombre_mantenedor: '',
-    nombre_supervisor: '',
-    nombre_calidad: '',
-  });
+  const [validandoFirma, setValidandoFirma] = useState(false);
+  const [firmaValidada, setFirmaValidada] = useState(false);
+  const [resultadoValidacion, setResultadoValidacion] = useState(null);
+  const [usuarioVerificado, setUsuarioVerificado] = useState(false);
 
-  const canvasRefs = {
-    mantenedor: useRef(),
-    supervisor: useRef(),
-    calidad: useRef(),
-  };
-
+  const canvasRef = useRef();
   const [scrollEnabled, setScrollEnabled] = useState(true);
-  const roles = ['mantenedor', 'supervisor', 'calidad'];
 
-  // Cargar nombre del usuario autenticado al montar el componente
+  // Cargar nombre del usuario y verificar si tiene verificación de identidad
   useEffect(() => {
-    const cargarNombreUsuario = async () => {
+    const cargarDatosUsuario = async () => {
       try {
         const usuarioActual = auth.currentUser;
         if (usuarioActual) {
           const uid = usuarioActual.uid;
           console.log('📋 Cargando datos del usuario:', uid);
-          
+
           const docRef = doc(db, 'Usuario', uid);
           const docSnap = await getDoc(docRef);
-          
+
           if (docSnap.exists()) {
             const datosUsuario = docSnap.data();
             const nombre = datosUsuario.nombre || datosUsuario.displayName || '';
-            
+
             if (nombre) {
-              setNombres(prev => ({
-                ...prev,
-                nombre_mantenedor: nombre
-              }));
+              setNombreMantenedor(nombre);
               console.log('✅ Nombre del mantenedor cargado:', nombre);
+            }
+
+            // Verificar si el usuario tiene verificación de identidad
+            const verificacion = datosUsuario.verificacion;
+            if (verificacion && verificacion.estado === 'verificado') {
+              setUsuarioVerificado(true);
+              console.log('✅ Usuario verificado, umbral:', verificacion.umbralSimilitud);
+            } else {
+              setUsuarioVerificado(false);
+              console.log('⚠️ Usuario NO verificado');
             }
           } else {
             console.log('⚠️ No se encontró documento del usuario en Firestore');
@@ -80,73 +82,144 @@ export default function Firma({ navigation, route }) {
           console.log('⚠️ No hay usuario autenticado');
         }
       } catch (error) {
-        console.error('❌ Error al cargar nombre del usuario:', error);
+        console.error('❌ Error al cargar datos del usuario:', error);
       }
     };
 
-    cargarNombreUsuario();
+    cargarDatosUsuario();
   }, []);
 
-  const getFirmaKey = (rol) => {
-    if (rol === 'calidad') {
-      return 'firma_a_calidad_dgm';
-    }
-    return `firma_${rol}`;
-  };
-
-  const getNombreKey = (rol) => {
-    return `nombre_${rol}`;
-  };
-
-  const manejarFirma = (signature, rol) => {
-    const key = getFirmaKey(rol);
-
+  const manejarFirma = (signature) => {
     let dataUri;
     if (signature.startsWith('data:image')) {
       dataUri = signature;
     } else {
       dataUri = `data:image/png;base64,${signature}`;
     }
-    
-    setFirmas({ ...firmas, [key]: dataUri });
-    console.log(`✅ Firma guardada para ${rol}:`, dataUri.substring(0, 50) + '...');
+
+    setFirma(dataUri);
+    console.log('✅ Firma guardada');
+
+    // Resetear validación cuando se firma de nuevo
+    setFirmaValidada(false);
+    setResultadoValidacion(null);
   };
 
-  const guardarFirma = (rol) => {
-    const ref = canvasRefs[rol]?.current;
-    if (ref && ref.readSignature) {
-      ref.readSignature();
+  const guardarFirma = () => {
+    if (canvasRef.current && canvasRef.current.readSignature) {
+      canvasRef.current.readSignature();
     } else {
       Alert.alert('Error', 'No se pudo guardar la firma');
     }
   };
 
-  const limpiarFirma = (rol) => {
-    const key = getFirmaKey(rol);
-    const ref = canvasRefs[rol]?.current;
-    if (ref && ref.clearSignature) {
-      ref.clearSignature();
-      setFirmas({ ...firmas, [key]: null });
-      console.log(`🗑️ Firma limpiada para ${rol}`);
+  const limpiarFirma = () => {
+    if (canvasRef.current && canvasRef.current.clearSignature) {
+      canvasRef.current.clearSignature();
+      setFirma(null);
+      setFirmaValidada(false);
+      setResultadoValidacion(null);
+      console.log('🗑️ Firma limpiada');
     }
   };
 
-  const capitalizar = (text) =>
-    text === 'calidad' ? 'A. Calidad DGM' : text.charAt(0).toUpperCase() + text.slice(1);
+  // Validar firma del mantenedor contra las de referencia
+  const validarFirmaMantenedor = async () => {
+    if (!firma) {
+      Alert.alert('Error', 'Primero debes firmar en el canvas');
+      return;
+    }
+
+    if (!usuarioVerificado) {
+      Alert.alert(
+        'Verificación Requerida',
+        'Debes verificar tu identidad en tu perfil antes de poder validar tu firma.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Ir a Perfil',
+            onPress: () => navigation.navigate('PerfilMantenedor')
+          }
+        ]
+      );
+      return;
+    }
+
+    setValidandoFirma(true);
+
+    try {
+      console.log('🔍 Validando firma del mantenedor...');
+      const resultado = await validarFirmaInforme(firma);
+
+      if (resultado.success) {
+        setResultadoValidacion(resultado.resultado);
+
+        if (resultado.resultado.esValida) {
+          setFirmaValidada(true);
+          Alert.alert(
+            '✅ Firma Válida',
+            `Tu firma coincide con la registrada.\nSimilitud: ${resultado.resultado.similitud}%`,
+            [{ text: 'Continuar' }]
+          );
+        } else {
+          setFirmaValidada(false);
+          Alert.alert(
+            '❌ Firma No Válida',
+            `Tu firma no coincide con la registrada.\nSimilitud: ${resultado.resultado.similitud}%\nRequerido: ${resultado.resultado.umbral}%\n\nPor favor, intenta firmar de nuevo de manera similar a como lo hiciste durante la calibración.`,
+            [{ text: 'Reintentar' }]
+          );
+        }
+      } else {
+        throw new Error(resultado.error || 'Error en validación');
+      }
+    } catch (error) {
+      console.error('❌ Error validando firma:', error);
+      Alert.alert(
+        'Error',
+        'No se pudo validar la firma. ' + error.message,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setValidandoFirma(false);
+    }
+  };
 
   const navegarAResumen = () => {
-    // Validar que la firma del mantenedor esté presente
-    if (!firmas.firma_mantenedor) {
+    // Validar que la firma esté presente
+    if (!firma) {
       Alert.alert(
         'Firma requerida',
-        'La firma del Mantenedor es obligatoria para continuar.',
+        'Debes firmar antes de continuar.',
+        [{ text: 'Entendido', style: 'default' }]
+      );
+      return;
+    }
+
+    // Si el usuario está verificado, la firma debe estar validada
+    if (usuarioVerificado && !firmaValidada) {
+      Alert.alert(
+        'Validación requerida',
+        'Debes validar tu firma antes de continuar. Presiona el botón "Validar Firma".',
         [{ text: 'Entendido', style: 'default' }]
       );
       return;
     }
 
     console.log('📤 Navegando a InformeResumen con mantenimientoId:', mantenimientoId);
-    
+
+    // Preparar objeto de firmas (solo mantenedor por ahora)
+    const firmas = {
+      firma_mantenedor: firma,
+      firma_supervisor: null,
+      firma_a_calidad_dgm: null,
+    };
+
+    const nombres = {
+      nombre_mantenedor: nombreMantenedor,
+      nombre_supervisor: '',
+      nombre_calidad: '',
+    };
+
     navigation.navigate('InformeResumen', {
       informe,
       respuestas,
@@ -154,115 +227,216 @@ export default function Firma({ navigation, route }) {
       firmas,
       nombres,
       mantenimientoId,
+      firmaValidada: firmaValidada,
+      similitudFirma: resultadoValidacion?.similitud || null,
     });
   };
 
   return (
     <View style={estilos.contenedorPrincipal}>
+      {/* Header */}
       <View style={estilos.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={estilos.botonVolver}>
-          <Ionicons name="arrow-back" size={24} color={COLORES.primario} />
+        <TouchableOpacity
+          style={estilos.botonVolver}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={estilos.titulo}>Firma</Text>
+        <Text style={estilos.titulo}>Firma del Mantenedor</Text>
       </View>
 
-      <ScrollView 
-        style={estilos.scrollContenido} 
+      <ScrollView
+        style={estilos.scrollContenido}
         contentContainerStyle={estilos.contenedorContenido}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
         scrollEnabled={scrollEnabled}
       >
-        {roles.map((rol, i) => (
-          <View key={i} style={estilos.bloqueFirma}>
-            <View style={estilos.headerRol}>
-              <Text style={estilos.rolTexto}>{capitalizar(rol)}</Text>
-              {rol === 'mantenedor' && (
-                <Text style={estilos.obligatorioTexto}>* Obligatorio</Text>
-              )}
-            </View>
+        {/* Información del equipo */}
+        <View style={estilos.infoEquipo}>
+          <Text style={estilos.equipoNombre}>{informe.equipo || equipo}</Text>
+          <Text style={estilos.equipoCodigo}>{informe.codigo_sgs || 'Sin código'}</Text>
+        </View>
 
-            <TextInput
-              style={estilos.inputNombre}
-              placeholder={`Nombre completo del ${capitalizar(rol)}`}
-              value={nombres[getNombreKey(rol)]}
-              onChangeText={(texto) => 
-                setNombres({ ...nombres, [getNombreKey(rol)]: texto })
-              }
-            />
-
-            <View style={estilos.contenedorFirma}>
-              <View style={estilos.cajaFirma}>
-                {Platform.OS !== 'web' ? (
-                  <SignatureCanvas
-                    ref={canvasRefs[rol]}
-                    onOK={(signature) => manejarFirma(signature, rol)}
-                    onEmpty={() => console.log(`Canvas vacío: ${rol}`)}
-                    onBegin={() => setScrollEnabled(false)}
-                    onEnd={() => setScrollEnabled(true)}
-                    descriptionText="Firme aquí"
-                    clearText="Limpiar"
-                    confirmText="Guardar"
-                    webStyle={`
-                      .m-signature-pad {
-                        box-shadow: none;
-                        border: none;
-                        margin: 0;
-                      }
-                      .m-signature-pad--body {
-                        border: none;
-                        margin: 0;
-                      }
-                      .m-signature-pad--footer {
-                        display: none;
-                      }
-                      body, html {
-                        margin: 0;
-                        padding: 0;
-                        width: 100%;
-                        height: 100%;
-                      }
-                    `}
-                  />
-                ) : (
-                  <Text style={estilos.textoWeb}>Canvas no disponible en web</Text>
-                )}
-              </View>
-              {Platform.OS !== 'web' && (
-                <View style={estilos.botonesCanvas}>
-                  <TouchableOpacity
-                    onPress={() => guardarFirma(rol)}
-                    style={[estilos.botonCanvas, estilos.botonGuardar]}
-                  >
-                    <Ionicons name="checkmark" size={16} color="#fff" />
-                    <Text style={estilos.textoBotonCanvas}>Guardar</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    onPress={() => limpiarFirma(rol)}
-                    style={[estilos.botonCanvas, estilos.botonLimpiar]}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#fff" />
-                    <Text style={estilos.textoBotonCanvas}>Limpiar</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {firmas[getFirmaKey(rol)] && (
-                <View style={estilos.indicadorGuardado}>
-                  <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-                  <Text style={estilos.textoGuardado}>Firma guardada</Text>
-                </View>
-              )}
-            </View>
+        {/* Banner de verificación */}
+        {usuarioVerificado ? (
+          <View style={[estilos.bannerVerificacion, { backgroundColor: '#d4edda' }]}>
+            <Ionicons name="shield-checkmark" size={20} color="#155724" />
+            <Text style={[estilos.bannerTexto, { color: '#155724' }]}>
+              Identidad verificada - Se validará tu firma
+            </Text>
           </View>
-        ))}
+        ) : (
+          <View style={[estilos.bannerVerificacion, { backgroundColor: '#fff3cd' }]}>
+            <Ionicons name="warning" size={20} color="#856404" />
+            <Text style={[estilos.bannerTexto, { color: '#856404' }]}>
+              Identidad no verificada - Verifica en tu perfil
+            </Text>
+          </View>
+        )}
 
+        {/* Nombre del mantenedor */}
+        <View style={estilos.campoNombre}>
+          <Text style={estilos.etiquetaNombre}>Tu nombre:</Text>
+          <TextInput
+            style={estilos.inputNombre}
+            value={nombreMantenedor}
+            onChangeText={setNombreMantenedor}
+            placeholder="Nombre completo"
+            placeholderTextColor="#999"
+          />
+        </View>
+
+        {/* Canvas de firma */}
+        <View style={estilos.contenedorFirma}>
+          <Text style={estilos.tituloFirma}>Dibuja tu firma:</Text>
+
+          <View style={[
+            estilos.cajaFirma,
+            firma && { borderColor: firmaValidada ? '#27ae60' : COLORES.primario },
+            !firma && { borderStyle: 'dashed' }
+          ]}>
+            {Platform.OS !== 'web' ? (
+              <SignatureCanvas
+                ref={canvasRef}
+                onOK={manejarFirma}
+                onEmpty={() => Alert.alert('Firma vacía', 'Por favor dibuja tu firma')}
+                onBegin={() => setScrollEnabled(false)}
+                onEnd={() => setScrollEnabled(true)}
+                descriptionText=""
+                clearText="Limpiar"
+                confirmText="Guardar"
+                webStyle={`
+                  .m-signature-pad {
+                    box-shadow: none;
+                    border: none;
+                    margin: 0;
+                  }
+                  .m-signature-pad--body {
+                    border: none;
+                    margin: 0;
+                  }
+                  .m-signature-pad--footer {
+                    display: none;
+                  }
+                  body, html {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    height: 100%;
+                  }
+                `}
+              />
+            ) : (
+              <Text style={estilos.textoWeb}>Canvas no disponible en web</Text>
+            )}
+          </View>
+
+          {/* Botones del canvas */}
+          {Platform.OS !== 'web' && (
+            <View style={estilos.botonesCanvas}>
+              <TouchableOpacity
+                onPress={guardarFirma}
+                style={[estilos.botonCanvas, estilos.botonGuardar]}
+              >
+                <Ionicons name="checkmark" size={16} color="#fff" />
+                <Text style={estilos.textoBotonCanvas}>Guardar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={limpiarFirma}
+                style={[estilos.botonCanvas, estilos.botonLimpiar]}
+              >
+                <Ionicons name="trash-outline" size={16} color="#fff" />
+                <Text style={estilos.textoBotonCanvas}>Limpiar</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Indicador de firma guardada */}
+          {firma && (
+            <View style={estilos.indicadorGuardado}>
+              <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+              <Text style={estilos.textoGuardado}>Firma capturada</Text>
+            </View>
+          )}
+
+          {/* Botón de validación (solo si está verificado) */}
+          {usuarioVerificado && firma && (
+            <TouchableOpacity
+              onPress={validarFirmaMantenedor}
+              disabled={validandoFirma}
+              style={{
+                backgroundColor: firmaValidada ? '#28a745' : '#007bff',
+                padding: 14,
+                borderRadius: 8,
+                marginTop: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {validandoFirma ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={firmaValidada ? 'checkmark-circle' : 'finger-print'}
+                    size={20}
+                    color="#fff"
+                  />
+                  <Text style={{ color: '#fff', fontWeight: '600', marginLeft: 8, fontSize: 15 }}>
+                    {firmaValidada ? 'Firma Validada ✓' : 'Validar mi Firma'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Resultado de validación */}
+          {resultadoValidacion && (
+            <View style={{
+              marginTop: 10,
+              padding: 12,
+              backgroundColor: resultadoValidacion.esValida ? '#d4edda' : '#f8d7da',
+              borderRadius: 8,
+            }}>
+              <Text style={{
+                color: resultadoValidacion.esValida ? '#155724' : '#721c24',
+                fontSize: 13,
+                textAlign: 'center',
+                fontWeight: '600',
+              }}>
+                Similitud: {resultadoValidacion.similitud}% | Requerido: {resultadoValidacion.umbral}%
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Nota informativa */}
+        <View style={estilos.notaInfo}>
+          <Ionicons name="information-circle" size={20} color="#17a2b8" />
+          <Text style={estilos.notaTexto}>
+            Tu firma será revisada y firmada posteriormente por el Supervisor y Control de Calidad de Codelco.
+          </Text>
+        </View>
+
+        {/* Botón finalizar */}
         <TouchableOpacity
-          style={estilos.botonFinalizar}
+          style={[
+            estilos.botonFinalizar,
+            (!firma || (usuarioVerificado && !firmaValidada)) && { backgroundColor: '#ccc' }
+          ]}
           onPress={navegarAResumen}
+          disabled={!firma || (usuarioVerificado && !firmaValidada)}
         >
-          <Text style={estilos.textoBotonFinalizar}>Finalizar</Text>
+          <Ionicons name="arrow-forward" size={20} color="#fff" />
+          <Text style={estilos.textoBotonFinalizar}>
+            {!firma
+              ? 'Primero firma arriba'
+              : (usuarioVerificado && !firmaValidada)
+                ? 'Valida tu firma primero'
+                : 'Continuar al Resumen'
+            }
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -272,136 +446,188 @@ export default function Firma({ navigation, route }) {
 const estilos = StyleSheet.create({
   contenedorPrincipal: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f5f5f5',
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 40,
+    paddingTop: 50,
     paddingBottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
   botonVolver: {
     position: 'absolute',
     left: 20,
-    top: 40,
+    top: 50,
     zIndex: 10,
+    padding: 4,
   },
   titulo: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    textAlign: 'center',
+    color: '#333',
   },
   scrollContenido: {
     flex: 1,
   },
   contenedorContenido: {
-    paddingHorizontal: 20,
-    paddingBottom: 30,
+    padding: 20,
+    paddingBottom: 40,
   },
-  bloqueFirma: {
-    marginBottom: 30,
-    marginTop: 16,
+  infoEquipo: {
+    backgroundColor: COLORES.primario,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  headerRol: {
+  equipoNombre: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  equipoCodigo: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  bannerVerificacion: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
   },
-  rolTexto: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
+  bannerTexto: {
+    marginLeft: 10,
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
   },
-  obligatorioTexto: {
-    fontSize: 12,
-    color: '#ff4444',
-    fontWeight: '600',
+  campoNombre: {
+    marginBottom: 16,
+  },
+  etiquetaNombre: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 6,
+    fontWeight: '500',
   },
   inputNombre: {
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#ddd',
     borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    marginBottom: 12,
-    backgroundColor: '#f9f9f9',
+    padding: 14,
+    fontSize: 15,
+    color: '#333',
   },
   contenedorFirma: {
-    width: '100%',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  tituloFirma: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
   },
   cajaFirma: {
-    height: 180,
+    height: 200,
     borderWidth: 2,
-    borderColor: COLORES.primario,
+    borderColor: '#ddd',
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#fff',
   },
   textoWeb: {
     textAlign: 'center',
-    marginTop: 60,
+    marginTop: 80,
     color: '#999',
   },
   botonesCanvas: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
+    marginTop: 10,
   },
   botonCanvas: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    borderRadius: 8,
     marginHorizontal: 4,
   },
   botonGuardar: {
     backgroundColor: COLORES.primario,
   },
   botonLimpiar: {
-    backgroundColor: '#666',
+    backgroundColor: '#6c757d',
   },
   textoBotonCanvas: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    marginLeft: 4,
+    marginLeft: 6,
   },
   indicadorGuardado: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    marginTop: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     backgroundColor: '#E8F5E9',
-    borderRadius: 4,
+    borderRadius: 6,
     alignSelf: 'flex-start',
   },
   textoGuardado: {
     color: '#4CAF50',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    marginLeft: 4,
+    marginLeft: 6,
+  },
+  notaInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#e7f5ff',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  notaTexto: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 12,
+    color: '#17a2b8',
+    lineHeight: 18,
   },
   botonFinalizar: {
     backgroundColor: COLORES.primario,
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 12,
+    justifyContent: 'center',
   },
   textoBotonFinalizar: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 16,
+    marginLeft: 8,
   },
 });

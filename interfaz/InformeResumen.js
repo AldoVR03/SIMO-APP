@@ -10,12 +10,15 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from "../servicio/firebase-config";
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore";
 import { format } from 'date-fns';
-import uploadImage from "../servicio/cloudinary-config";
 import { verificarConexionInternet } from "../servicio/network-service";
 import { guardarMantenimientoOffline } from "../servicio/offline-storage";
+
+// Usar Firebase Storage en lugar de Cloudinary
+import { subirImagenStorage, subirBase64Storage } from '../servicio/Storageservice'
 
 export default function InformeResumen({ route, navigation }) {
   const [guardando, setGuardando] = useState(false);
@@ -27,30 +30,10 @@ export default function InformeResumen({ route, navigation }) {
     firmas = {},
     respaldos = {},
     nombres = {},
-    mantenimientoId = null, // ID del documento de mantenimiento
+    mantenimientoId = null,
+    firmaValidada = false,
+    similitudFirma = null,
   } = route?.params || {};
-
-  const uploadDataUri = async (dataUri, nombre = 'firma') => {
-    const formData = new FormData();
-    formData.append("file", dataUri);
-    formData.append("upload_preset", "SIMO-APP-Evidencia-Firma");
-    formData.append("cloud_name", "due9nyqmr");
-
-    try {
-      const response = await fetch(
-        "https://api.cloudinary.com/v1_1/due9nyqmr/image/upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-      const json = await response.json();
-      return json.secure_url || null;
-    } catch (error) {
-      console.error(`Error subiendo ${nombre}:`, error);
-      return null;
-    }
-  };
 
   const guardarInforme = async () => {
     setGuardando(true);
@@ -58,7 +41,7 @@ export default function InformeResumen({ route, navigation }) {
       const conectado = await verificarConexionInternet();
 
       if (!conectado) {
-        console.log('📴 Modo offline: Guardando localmente...');
+        console.log('🔴 Modo offline: Guardando localmente...');
 
         // Verificar si faltan firmas
         const firmasRequeridas = ['firma_mantenedor', 'firma_supervisor', 'firma_a_calidad_dgm'];
@@ -77,7 +60,9 @@ export default function InformeResumen({ route, navigation }) {
           nombres,
           usuario: auth.currentUser ? auth.currentUser.email : "Anon",
           fecha_creacion: new Date().toISOString(),
-          estado: estadoOffline
+          estado: estadoOffline,
+          firmaValidada,
+          similitudFirma,
         };
 
         const guardado = await guardarMantenimientoOffline(informeOffline);
@@ -98,41 +83,72 @@ export default function InformeResumen({ route, navigation }) {
         return;
       }
 
-      // Subir imágenes de evidencia
+      // ===== MODO ONLINE: Subir a Firebase Storage =====
+
+      // Subir imágenes de evidencia a Firebase Storage
+      console.log('📤 Subiendo evidencias a Firebase Storage...');
       const urlsImagenes = [];
-      for (const uri of imagenes) {
+      for (let i = 0; i < imagenes.length; i++) {
+        const uri = imagenes[i];
         try {
-          const urlCloudinary = await uploadImage(uri);
-          urlsImagenes.push(urlCloudinary);
+          // Si ya es una URL de Firebase Storage, no volver a subir
+          if (uri.includes('firebasestorage.googleapis.com') || uri.includes('storage.googleapis.com')) {
+            urlsImagenes.push(uri);
+            console.log(`✅ Evidencia ${i + 1} ya está en Storage`);
+          } else {
+            const urlStorage = await subirImagenStorage(
+              uri, 
+              `evidencias/${mantenimientoId || 'sin_id'}`,
+              `evidencia_${i + 1}_${Date.now()}.jpg`
+            );
+            urlsImagenes.push(urlStorage);
+            console.log(`✅ Evidencia ${i + 1} subida a Storage`);
+          }
         } catch (error) {
-          console.error('Error subiendo imagen:', error);
-          urlsImagenes.push(uri);
+          console.error(`Error subiendo evidencia ${i + 1}:`, error);
+          urlsImagenes.push(uri); // Mantener URI local como fallback
         }
       }
 
-      // Subir firmas
+      // Subir firmas a Firebase Storage
+      console.log('📤 Subiendo firmas a Firebase Storage...');
       const urlsFirmas = {};
       for (const [key, dataUri] of Object.entries(firmas)) {
         if (dataUri && dataUri.startsWith('data:image')) {
           try {
-            const urlCloudinary = await uploadDataUri(dataUri, key);
-            urlsFirmas[key] = urlCloudinary || dataUri;
+            const urlStorage = await subirBase64Storage(
+              dataUri,
+              `firmas_informes/${mantenimientoId || 'sin_id'}`,
+              `${key}_${Date.now()}.png`
+            );
+            urlsFirmas[key] = urlStorage;
+            console.log(`✅ Firma ${key} subida a Storage`);
           } catch (error) {
             console.error(`Error subiendo firma ${key}:`, error);
-            urlsFirmas[key] = dataUri;
+            urlsFirmas[key] = dataUri; // Mantener base64 como fallback
           }
         } else {
           urlsFirmas[key] = dataUri;
         }
       }
 
-      // Subir respaldos (carnets)
+      // Subir respaldos (carnets) a Firebase Storage
+      console.log('📤 Subiendo respaldos a Firebase Storage...');
       const urlsRespaldos = {};
       for (const [key, uri] of Object.entries(respaldos)) {
         if (uri) {
           try {
-            const urlCloudinary = await uploadImage(uri);
-            urlsRespaldos[key] = urlCloudinary;
+            if (uri.includes('firebasestorage.googleapis.com') || uri.includes('storage.googleapis.com')) {
+              urlsRespaldos[key] = uri;
+            } else {
+              const urlStorage = await subirImagenStorage(
+                uri,
+                `respaldos/${mantenimientoId || 'sin_id'}`,
+                `${key}_${Date.now()}.jpg`
+              );
+              urlsRespaldos[key] = urlStorage;
+              console.log(`✅ Respaldo ${key} subido a Storage`);
+            }
           } catch (error) {
             console.error(`Error subiendo respaldo ${key}:`, error);
             urlsRespaldos[key] = uri;
@@ -147,7 +163,8 @@ export default function InformeResumen({ route, navigation }) {
       // Determinar el nuevo estado
       const nuevoEstado = faltanFirmas ? "Faltante de firmas" : "Completado";
 
-      // Guardar el informe en la colección informePreventivo con ESTRUCTURA ESTRICTA
+      // Guardar el informe en la colección informePreventivo
+      console.log('💾 Guardando informe en Firestore...');
       const docRef = await addDoc(collection(db, "informePreventivo"), {
         codigo_sgs: informe.codigo_sgs || informe.id || "SIN_CODIGO",
         equipo: informe.equipo || "Equipo no definido",
@@ -163,9 +180,15 @@ export default function InformeResumen({ route, navigation }) {
         respaldos: urlsRespaldos,
         respuestas: respuestas,
         usuario: auth.currentUser ? auth.currentUser.email : "Anon",
+        // Datos de validación de firma
+        firmaValidada: firmaValidada,
+        similitudFirma: similitudFirma,
+        storage: 'firebase', // Indicar que usa Firebase Storage
       });
 
-      // CRÍTICO: Actualizar el estado del mantenimiento en planificacion
+      console.log('✅ Informe guardado con ID:', docRef.id);
+
+      // Actualizar el estado del mantenimiento en planificacion
       if (mantenimientoId && informe.id) {
         const mantenimientoRef = doc(
           db,
@@ -177,17 +200,15 @@ export default function InformeResumen({ route, navigation }) {
 
         const datosActualizacion = {
           estado: nuevoEstado,
-          informeId: docRef.id, // Guardar referencia al informe
+          informeId: docRef.id,
           fechaActualizacion: serverTimestamp(),
         };
 
-        // Si está completado, agregar la fecha de completado
         if (nuevoEstado === "Completado") {
           datosActualizacion.fechaCompletado = format(new Date(), 'yyyy-MM-dd');
         }
 
         await updateDoc(mantenimientoRef, datosActualizacion);
-
         console.log(`✅ Estado del mantenimiento actualizado a: ${nuevoEstado}`);
       } else {
         console.warn("⚠️ No se pudo actualizar el estado: falta mantenimientoId o informe.id");
@@ -195,7 +216,7 @@ export default function InformeResumen({ route, navigation }) {
 
       Alert.alert(
         "Éxito",
-        `El informe se guardó correctamente.\nEstado: ${nuevoEstado}`,
+        `El informe se guardó correctamente.\nEstado: ${nuevoEstado}${firmaValidada ? '\n✅ Firma validada' : ''}`,
         [
           {
             text: "OK",
@@ -205,8 +226,8 @@ export default function InformeResumen({ route, navigation }) {
       );
 
     } catch (error) {
-      console.error('Error guardando informe:', error);
-      Alert.alert("Error", "No se pudo guardar el informe en Firebase: " + error.message);
+      console.error('❌ Error guardando informe:', error);
+      Alert.alert("Error", "No se pudo guardar el informe: " + error.message);
     } finally {
       setGuardando(false);
     }
@@ -225,6 +246,24 @@ export default function InformeResumen({ route, navigation }) {
         contentContainerStyle={estilos.contenedor}
       >
         <Text style={estilos.titulo}>Resumen del Informe</Text>
+
+        {/* Indicador de validación de firma */}
+        {firmaValidada && (
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#d4edda',
+            padding: 12,
+            borderRadius: 8,
+            marginBottom: 20,
+          }}>
+            <Ionicons name="shield-checkmark" size={20} color="#155724" />
+            <Text style={{ color: '#155724', fontWeight: '600', marginLeft: 8 }}>
+              Firma del mantenedor validada ({similitudFirma}% similitud)
+            </Text>
+          </View>
+        )}
 
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Datos del equipo</Text>
@@ -264,6 +303,9 @@ export default function InformeResumen({ route, navigation }) {
 
         <View style={estilos.seccion}>
           <Text style={estilos.tituloSeccion}>Evidencia fotográfica</Text>
+          <Text style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>
+            📦 Almacenamiento: Firebase Storage
+          </Text>
           {imagenes.length === 0 ? (
             <Text style={estilos.sinDatos}>No se subieron imágenes.</Text>
           ) : (
@@ -286,9 +328,24 @@ export default function InformeResumen({ route, navigation }) {
 
             return (
               <View key={i} style={estilos.firmaBloque}>
-                <Text style={estilos.nombreRol}>
-                  {rol === "calidad" ? "A. Calidad DGM" : rol.charAt(0).toUpperCase() + rol.slice(1)}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={estilos.nombreRol}>
+                    {rol === "calidad" ? "A. Calidad DGM" : rol.charAt(0).toUpperCase() + rol.slice(1)}
+                  </Text>
+                  {rol === 'mantenedor' && firmaValidada && (
+                    <View style={{
+                      backgroundColor: '#28a745',
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                      borderRadius: 10,
+                      marginLeft: 10,
+                    }}>
+                      <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>
+                        ✓ Validada
+                      </Text>
+                    </View>
+                  )}
+                </View>
 
                 {nombres[nombreKey] && (
                   <Text style={estilos.nombrePersona}>
@@ -299,13 +356,11 @@ export default function InformeResumen({ route, navigation }) {
                 <View style={estilos.firmaContenedor}>
                   <Text style={estilos.subtitulo}>Firma:</Text>
                   {firmas[firmaKey] ? (
-                    <>
-                      <Image
-                        source={{ uri: firmas[firmaKey] }}
-                        style={estilos.firmaImagen}
-                        resizeMode="contain"
-                      />
-                    </>
+                    <Image
+                      source={{ uri: firmas[firmaKey] }}
+                      style={estilos.firmaImagen}
+                      resizeMode="contain"
+                    />
                   ) : (
                     <Text style={estilos.textoFaltante}>Firma pendiente</Text>
                   )}
@@ -321,7 +376,12 @@ export default function InformeResumen({ route, navigation }) {
           disabled={guardando}
         >
           {guardando ? (
-            <ActivityIndicator color="#fff" />
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ActivityIndicator color="#fff" />
+              <Text style={[estilos.textoBoton, { marginLeft: 10 }]}>
+                Subiendo a Firebase Storage...
+              </Text>
+            </View>
           ) : (
             <Text style={estilos.textoBoton}>Guardar informe y finalizar</Text>
           )}

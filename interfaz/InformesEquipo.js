@@ -7,10 +7,8 @@ import {
   ActivityIndicator,
   SafeAreaView,
 } from 'react-native';
-// 1. Importamos onSnapshot para tiempo real
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../servicio/firebase-config';
-// 2. Importamos la función para leer lo que está pendiente en el celular
 import { obtenerMantenimientosOffline } from '../servicio/offline-storage';
 import estilosComunes, { COLORES } from '../assets/estilos';
 
@@ -30,25 +28,32 @@ export default function InformesDelEquipo({ route, navigation }) {
   const [informes, setInformes] = useState([]);
   const [cargando, setCargando] = useState(true);
 
+  // Debug: mostrar qué valores estamos buscando
+  useEffect(() => {
+    console.log('🔍 Buscando informes para:');
+    console.log('   idEquipo:', idEquipo);
+    console.log('   codigoSGS:', codigoSGS);
+    console.log('   nombreEquipo:', nombreEquipo);
+  }, [idEquipo, codigoSGS, nombreEquipo]);
+
   // EFECTO 1: Cargar datos Offline y suscribirse a Firestore
   useEffect(() => {
     setCargando(true);
 
-    // A) CARGAR DATOS OFFLINE (Lo que está pendiente de subir)
+    // A) CARGAR DATOS OFFLINE
     const cargarOffline = async () => {
       try {
         const pendientes = await obtenerMantenimientosOffline();
-        // Filtramos solo los que pertenecen a este equipo
         const misPendientes = pendientes.filter(m =>
           m.equipo_id === idEquipo ||
-          (m.informe && m.informe.id_interno === idEquipo)
+          (m.informe && m.informe.id_interno === idEquipo) ||
+          (m.informe && m.informe.codigo_sgs === codigoSGS)
         ).map(m => ({
           ...m,
-          // Asignamos una ID temporal y datos para que no rompa la lista
           id: m.mantenimientoId || `temp-${Date.now()}`,
           tipo: m.tipo || 'Pendiente',
           fecha: m.timestamp_offline || new Date(),
-          esLocal: true, // Bandera para pintarlo diferente
+          esLocal: true,
           usuario: 'Tú (Sincronizando...)'
         }));
         setListaOffline(misPendientes);
@@ -58,49 +63,127 @@ export default function InformesDelEquipo({ route, navigation }) {
     };
     cargarOffline();
 
-    // B) SUSCRIPCIÓN PREVENTIVOS (Tiempo Real)
-    const qPrev = query(
+    // B) SUSCRIPCIÓN PREVENTIVOS - Buscar por múltiples campos
+    let preventivosById = [];
+    let preventivosByCodigo = [];
+    let preventivosByEquipo = [];
+
+    // Query por id_interno
+    const qPrev1 = query(
       collection(db, "informePreventivo"),
       where("id_interno", "==", idEquipo)
     );
 
-    const unsubscribePrev = onSnapshot(qPrev, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
+    // Query por codigo_sgs
+    const qPrev2 = query(
+      collection(db, "informePreventivo"),
+      where("codigo_sgs", "==", codigoSGS)
+    );
+
+    // Query por equipo (nombre)
+    const qPrev3 = query(
+      collection(db, "informePreventivo"),
+      where("equipo", "==", nombreEquipo)
+    );
+
+    const combinarPreventivos = () => {
+      const combined = [...preventivosById, ...preventivosByCodigo, ...preventivosByEquipo];
+      const unique = combined.filter((item, index, self) =>
+        index === self.findIndex(t => t.id === item.id)
+      );
+      // Filtrar solo completados
+      const completados = unique.filter(item => item.estado === 'Completado');
+      console.log(`📋 Preventivos encontrados: ${unique.length} (Completados: ${completados.length})`);
+      setListaPreventivos(completados);
+    };
+
+    const unsubscribePrev1 = onSnapshot(qPrev1, (snapshot) => {
+      preventivosById = snapshot.docs.map(doc => ({
         id: doc.id,
         tipo: 'Preventivo',
         ...doc.data()
       }));
-      setListaPreventivos(data);
-    }, (error) => console.log("Error preventivos:", error));
+      console.log(`   Por id_interno: ${preventivosById.length}`);
+      combinarPreventivos();
+    }, (error) => console.log("Error preventivos por id:", error));
 
-    // C) SUSCRIPCIÓN CORRECTIVOS (Tiempo Real)
-    const qCorr = query(
+    const unsubscribePrev2 = onSnapshot(qPrev2, (snapshot) => {
+      preventivosByCodigo = snapshot.docs.map(doc => ({
+        id: doc.id,
+        tipo: 'Preventivo',
+        ...doc.data()
+      }));
+      console.log(`   Por codigo_sgs: ${preventivosByCodigo.length}`);
+      combinarPreventivos();
+    }, (error) => console.log("Error preventivos por codigo:", error));
+
+    const unsubscribePrev3 = onSnapshot(qPrev3, (snapshot) => {
+      preventivosByEquipo = snapshot.docs.map(doc => ({
+        id: doc.id,
+        tipo: 'Preventivo',
+        ...doc.data()
+      }));
+      console.log(`   Por equipo: ${preventivosByEquipo.length}`);
+      combinarPreventivos();
+    }, (error) => console.log("Error preventivos por equipo:", error));
+
+    // C) SUSCRIPCIÓN CORRECTIVOS
+    let correctivosById = [];
+    let correctivosByCodigo = [];
+
+    const qCorr1 = query(
       collection(db, "informeCorrectivo"),
       where("id_interno", "==", idEquipo)
     );
 
-    const unsubscribeCorr = onSnapshot(qCorr, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
+    const qCorr2 = query(
+      collection(db, "informeCorrectivo"),
+      where("codigoSGS", "==", codigoSGS)
+    );
+
+    const combinarCorrectivos = () => {
+      const combined = [...correctivosById, ...correctivosByCodigo];
+      const unique = combined.filter((item, index, self) =>
+        index === self.findIndex(t => t.id === item.id)
+      );
+      // Filtrar solo completados
+      const completados = unique.filter(item => item.estado === 'Completado');
+      console.log(`🔧 Correctivos encontrados: ${unique.length} (Completados: ${completados.length})`);
+      setListaCorrectivos(completados);
+    };
+
+    const unsubscribeCorr1 = onSnapshot(qCorr1, (snapshot) => {
+      correctivosById = snapshot.docs.map(doc => ({
         id: doc.id,
         tipo: 'Correctivo',
         ...doc.data()
       }));
-      setListaCorrectivos(data);
-    }, (error) => console.log("Error correctivos (puede estar vacía):", error));
+      combinarCorrectivos();
+    }, (error) => console.log("Error correctivos por id:", error));
+
+    const unsubscribeCorr2 = onSnapshot(qCorr2, (snapshot) => {
+      correctivosByCodigo = snapshot.docs.map(doc => ({
+        id: doc.id,
+        tipo: 'Correctivo',
+        ...doc.data()
+      }));
+      combinarCorrectivos();
+    }, (error) => console.log("Error correctivos por codigo:", error));
 
     // Limpieza al salir de la pantalla
     return () => {
-      unsubscribePrev();
-      unsubscribeCorr();
+      unsubscribePrev1();
+      unsubscribePrev2();
+      unsubscribePrev3();
+      unsubscribeCorr1();
+      unsubscribeCorr2();
     };
-  }, [idEquipo]);
+  }, [idEquipo, codigoSGS, nombreEquipo]);
 
   // EFECTO 2: Unificar y Ordenar listas cada vez que cambie alguna fuente
   useEffect(() => {
-    // Unimos todo: Offline + Preventivos + Correctivos
     let consolidado = [...listaOffline, ...listaPreventivos, ...listaCorrectivos];
 
-    // Ordenamos por fecha (más reciente primero)
     consolidado.sort((a, b) => {
       const fechaA = obtenerFechaObjeto(a.fecha);
       const fechaB = obtenerFechaObjeto(b.fecha);
@@ -111,11 +194,10 @@ export default function InformesDelEquipo({ route, navigation }) {
     setCargando(false);
   }, [listaOffline, listaPreventivos, listaCorrectivos]);
 
-  // Función auxiliar para manejar fechas de Firestore (Timestamp) y Strings
   const obtenerFechaObjeto = (fecha) => {
     if (!fecha) return new Date(0);
-    if (fecha.toDate) return fecha.toDate(); // Es Timestamp de Firestore
-    return new Date(fecha); // Es String o Date JS
+    if (fecha.toDate) return fecha.toDate();
+    return new Date(fecha);
   };
 
   const formatearFecha = (fecha) => {
@@ -128,7 +210,7 @@ export default function InformesDelEquipo({ route, navigation }) {
   };
 
   const obtenerColorTipo = (item) => {
-    if (item.esLocal) return '#f1c40f'; // Amarillo para pendientes offline
+    if (item.esLocal) return '#f1c40f';
     if (item.tipo === 'Correctivo') return '#e67e22';
     return '#3498db';
   };
@@ -178,7 +260,6 @@ export default function InformesDelEquipo({ route, navigation }) {
                 No hay informes registrados{'\n'}para este equipo
               </Text>
             </View>
-            {/* Botón para crear nuevo */}
             <View style={{ paddingBottom: 20 }}>
               <TouchableOpacity
                 style={[estilosComunes.boton, { backgroundColor: '#e67e22' }]}
@@ -206,7 +287,6 @@ export default function InformesDelEquipo({ route, navigation }) {
                   {
                     backgroundColor: '#fff',
                     borderWidth: 2,
-                    // Si es local, borde amarillo, si no, su color normal
                     borderColor: obtenerColorTipo(item)
                   }
                 ]}

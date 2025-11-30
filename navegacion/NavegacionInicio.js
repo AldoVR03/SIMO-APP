@@ -8,7 +8,10 @@ import OlvideContrasena from '../interfaz/OlvideContraseña';
 
 //Inicio mantenedor /Calendario/Formulario/Evidencia/Firma/Resumen/
 import InicioMantenedor from '../interfaz/InicioMantenedor';
+
 import PerfilMantenedor from '../interfaz/PerfilMantenedor';
+import VerificacionIdentidad from '../interfaz/VerificacionIdentidad';
+
 import CompletarFirmas from '../interfaz/CompletarFirmas';
 import CambioContrasena from '../interfaz/CambioContrasena';
 
@@ -37,6 +40,16 @@ import CambioContrasenaAdmin from '../interfaz/CambioContrasenaAdmin';
 import AgregarTrabajador from '../interfaz/AgregarTrabajador';
 import AgregarEquipo from '../interfaz/AgregarEquipo';
 
+// Inicio Supervisor
+import InicioSupervisor from '../interfaz/InicioSupervisor';
+import PerfilSupervisor from '../interfaz/PerfilSupervisor';
+import VerInformePendiente from '../interfaz/Verinformependiente';
+import FirmarInforme from '../interfaz/Firmarinforme';
+
+import Iniciocalidad from '../interfaz/Iniciocalidad';
+import PerfilCalidad from '../interfaz/Perfilcalidad';
+
+
 import { StackScreen } from 'react-native-screens';
 
 const Stack = createNativeStackNavigator();
@@ -49,7 +62,10 @@ export default function NavegacionInicio() {
         <Stack.Screen name="OlvideContrasena" component={OlvideContrasena} />
 
         <Stack.Screen name="InicioMantenedor" component={InicioMantenedor} />
+
         <Stack.Screen name="PerfilMantenedor" component={PerfilMantenedor} />
+        <Stack.Screen name="VerificacionIdentidad" component={VerificacionIdentidad} />
+
         <Stack.Screen name="CompletarFirmas" component={CompletarFirmas} />
         <Stack.Screen name="CambioContrasena" component={CambioContrasena} />
 
@@ -75,6 +91,13 @@ export default function NavegacionInicio() {
         <Stack.Screen name="AgregarTrabajador" component={AgregarTrabajador} />
         <Stack.Screen name="AgregarEquipo" component={AgregarEquipo} />
 
+        <Stack.Screen name="InicioSupervisor" component={InicioSupervisor} />
+        <Stack.Screen name="PerfilSupervisor" component={PerfilSupervisor} />
+        <Stack.Screen name="VerInformePendiente" component={VerInformePendiente} />
+        <Stack.Screen name="FirmarInforme" component={FirmarInforme} />
+
+        <Stack.Screen name="Iniciocalidad" component={Iniciocalidad} />
+        <Stack.Screen name="PerfilCalidad" component={PerfilCalidad} />
       </Stack.Navigator>
     </NavigationContainer>
   );
